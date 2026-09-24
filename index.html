@@ -195,6 +195,15 @@
   .rss-cfg > summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #7b1fa2; }
   .rss-cfg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
   @media (max-width: 600px) { .rss-cfg-grid { grid-template-columns: 1fr; } }
+  .rss-sub-box { margin-top: 10px; }
+  .rss-sub-label { font-size: 11px; color: #888; margin: 10px 0 4px; }
+  .rss-sub-url {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px; background: #fff; border: 1px solid #e0e0e0; border-radius: 6px;
+    padding: 8px 10px; word-break: break-all; color: #333; user-select: all;
+  }
+  a.rss-sub-url { display: block; text-decoration: none; color: #1565c0; }
+  .rss-sub-url:hover { border-color: #7b1fa2; }
 </style>
 </head>
 <body>
@@ -566,6 +575,37 @@
             <label>UID 前缀</label>
             <input type="text" id="rssUidPrefix" value="rss2ics">
           </div>
+        </div>
+      </details>
+    </div>
+
+    <div class="know-gen">
+      <h4>🔗 订阅（webcal）</h4>
+      <p class="know-gen-tip">把当前订阅源变成一个可长期订阅的日历地址：日历 App 会按自己的节奏自动重新拉取，不必每次手动导出。链接由 Cloudflare 上的 <code>/api/rss-to-ics</code> 实时把订阅源转成 ICS。</p>
+      <div class="know-gen-row">
+        <div style="flex:0 0 auto;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn-purple btn-sm" onclick="rssBuildSub()">🔗 生成订阅链接</button>
+          <button class="btn-secondary btn-sm" onclick="rssCopySub()">📋 复制 https</button>
+          <button class="btn-secondary btn-sm" onclick="rssTestSub()">🧪 测试链接</button>
+        </div>
+      </div>
+      <div class="rss-sub-box" id="rssSubBox" style="display:none;">
+        <div class="rss-sub-label">webcal —— iPhone / iPad / macOS / Outlook 直接点这个</div>
+        <a class="rss-sub-url" id="rssSubWebcal" href="#"></a>
+        <div class="rss-sub-label">https —— Google 日历「通过网址添加」用这个</div>
+        <div class="rss-sub-url" id="rssSubHttp"></div>
+      </div>
+      <div class="know-gen-stats" id="rssSubMsg"></div>
+
+      <details class="rss-cfg">
+        <summary>📱 各端怎么添加 + 注意事项</summary>
+        <div style="font-size:12px;color:#666;line-height:1.9;margin-top:10px;">
+          <p><strong>iPhone / iPad：</strong>设置 → 日历 → 账户 → 添加账户 → 其他 → 添加已订阅的日历 → 粘贴链接。</p>
+          <p><strong>macOS 日历：</strong>文件 → 新建日历订阅 → 粘贴链接 → 选「自动刷新」。</p>
+          <p><strong>Google 日历：</strong>左下「其他日历」＋ → 通过网址添加 → 粘贴 <strong>https</strong> 链接。</p>
+          <p><strong>Outlook：</strong>添加日历 → 从 Internet 订阅 → 粘贴链接。</p>
+          <p style="color:#c62828;">⚠️ 订阅内容直接从订阅源派生，<strong>不包含你在上面表格里手工改的内容</strong>；要手工改就用「📥 导出 ICS」。</p>
+          <p>⚠️ 刷新时机由日历 App 决定（Apple 较勤、Google 约 12–24 小时），不是实时；端点已用缓存保护源站。</p>
         </div>
       </details>
     </div>
@@ -2589,8 +2629,28 @@ function rssFindDate(node) {
   return "";
 }
 
+/* ---------- 时区：把「瞬时」换算成目标时区的墙上时间 ---------- */
+function rssSafeTz(tz) {
+  const v = String(tz == null ? "" : tz).trim() || "Asia/Shanghai";
+  try { new Intl.DateTimeFormat("en-US", { timeZone: v }).format(new Date()); return v; } catch (e) { return "Asia/Shanghai"; }
+}
+function rssCurrentTz() {
+  const el = document.getElementById("rssTimezone");
+  return rssSafeTz(el && el.value);
+}
+function rssWallClock(date, tz) {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: rssSafeTz(tz), year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false
+  });
+  const p = {};
+  fmt.formatToParts(date).forEach(function (x) { p[x.type] = x.value; });
+  const hh = p.hour === "24" ? "00" : p.hour;
+  return { date: p.year + "-" + p.month + "-" + p.day, time: hh + ":" + p.minute };
+}
+
 /* RSS 2.0 + Atom 1.0 → 统一的可编辑行对象 */
-function parseFeed(xmlText) {
+function parseFeed(xmlText, timeZone) {
   const doc = new DOMParser().parseFromString(xmlText, "text/xml");
   if (doc.querySelector("parsererror")) throw new Error("XML 解析失败：返回内容不是有效的 RSS / Atom");
   const isAtom = doc.querySelector("feed") !== null;
@@ -2621,13 +2681,17 @@ function parseFeed(xmlText) {
     const published = rssFindDate(node);
     if (!id) id = link || title || "";
 
-    // 日期解析（失败留空，不阻断其他行）
-    let startDate = "", startTime = "";
+    // 日期解析（失败留空，不阻断其他行）；按目标时区换算成「墙上时间」——
+    // 17:30+0800 在上海就该是 17:30，而不是把 UTC 的 09:30 直接贴上 TZID 标签
+    const tz = rssSafeTz(timeZone);
+    let startDate = "", startTime = "", dateObj = null;
     if (published) {
       const d = new Date(published);
       if (!isNaN(d.getTime())) {
-        startDate = d.toISOString().slice(0, 10);
-        startTime = d.toISOString().slice(11, 16);
+        dateObj = d;
+        const wc = rssWallClock(d, tz);
+        startDate = wc.date;
+        startTime = wc.time;
       }
     }
     // 描述清洗：去 HTML 标签、压空白、截断 300 字
@@ -2646,7 +2710,8 @@ function parseFeed(xmlText) {
       title: title || "无标题",
       startDate: startDate,
       startTime: startTime,
-      timezone: "Asia/Shanghai",
+      dateObj: dateObj,
+      timezone: tz,
       location: "",
       description: description,
       sourceUrl: link || "",
@@ -2654,6 +2719,11 @@ function parseFeed(xmlText) {
       uid: uid
     };
   });
+}
+
+/* 判断响应体是不是真的订阅源 —— 防止被「站点把未知路径回退成首页」的 HTML 骗过 */
+function rssLooksLikeFeed(s) {
+  return typeof s === "string" && /<(rss|feed|rdf)[\s:>]/i.test(s);
 }
 
 /* 抓取：优先代理，失败自动直连（GitHub Pages / 本地打开时降级） */
@@ -2665,12 +2735,12 @@ async function rssFetchXml(url) {
     if (r.ok) {
       if (ct.indexOf("json") >= 0) {
         const data = await r.json();
-        if (data && data.xml && String(data.xml).indexOf("<") >= 0) return { xml: data.xml, via: "代理" };
-        errs.push((data && data.error) || "代理返回为空");
+        if (data && rssLooksLikeFeed(data.xml)) return { xml: data.xml, via: "代理" };
+        errs.push((data && data.error) || "代理没取到订阅源");
       } else {
         const t = await r.text();
-        if (t && t.indexOf("<") >= 0) return { xml: t, via: "代理" };
-        errs.push("代理返回非 XML");
+        if (rssLooksLikeFeed(t)) return { xml: t, via: "代理" };
+        errs.push("代理返回的不是订阅源（本站可能把未知路径回退成首页）");
       }
     } else {
       errs.push("代理 HTTP " + r.status);
@@ -2681,7 +2751,7 @@ async function rssFetchXml(url) {
     const r2 = await fetch(url, { headers: { Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*" } });
     if (!r2.ok) throw new Error("HTTP " + r2.status);
     const t2 = await r2.text();
-    if (!t2 || t2.indexOf("<") < 0) throw new Error("返回内容不是 XML");
+    if (!rssLooksLikeFeed(t2)) throw new Error("返回内容不是 RSS / Atom（可能是登录页或反爬页）");
     return { xml: t2, via: "直连" };
   } catch (e2) {
     throw new Error("抓取失败 —— 代理：" + (errs.join("；") || "无") + "；直连：" + e2.message +
@@ -2748,7 +2818,7 @@ async function rssParse() {
   rssSetMsg("⏳ 正在抓取并解析…", "info");
   try {
     const got = await rssFetchXml(url);
-    rssParsed = parseFeed(got.xml);
+    rssParsed = parseFeed(got.xml, rssCurrentTz());
     const bad = rssParsed.filter(function (it) { return !it.startDate; }).length;
     rssRenderPreview();
     if (box) box.style.display = "block";
@@ -2809,6 +2879,10 @@ function rssClearAll() {
   if (pv) pv.innerHTML = "";
   const box = document.getElementById("rssPreviewBox");
   if (box) box.style.display = "none";
+  const subBox = document.getElementById("rssSubBox");
+  if (subBox) subBox.style.display = "none";
+  const subMsg = document.getElementById("rssSubMsg");
+  if (subMsg) subMsg.textContent = "";
   rssParsed = [];
   rssSetMsg("", "");
   rssClearTable();
@@ -2831,7 +2905,14 @@ function rssRowValuesFromItem(it) {
     const s = (it.description || "").slice(0, 20);
     if (s) title = title + " - " + s;
   }
-  return [title, it.startDate || "", it.startTime || "", it.location || "",
+  // 有原始瞬时就用「当前时区」重算一次，这样改了时区再入表也对
+  let dateStr = it.startDate || "", timeStr = it.startTime || "";
+  if (it.dateObj) {
+    const wc = rssWallClock(it.dateObj, rssCurrentTz());
+    dateStr = wc.date;
+    timeStr = wc.time;
+  }
+  return [title, dateStr, timeStr, it.location || "",
     it.description || "", it.sourceUrl || "", it.reminder != null ? it.reminder : 30];
 }
 function rssAddItems(list) {
@@ -2962,6 +3043,118 @@ function rssGenerate() {
   if (noDate) extra.push(noDate + " 行日期无法解析");
   if (noTime) extra.push(noTime + " 行缺少时间");
   if (msg) msg.textContent = "✅ 已生成 " + events.length + " 条事件" + (extra.length ? "；跳过 " + extra.join("、") : "");
+}
+
+/* ---------- webcal 订阅链接 ---------- */
+function rssSubBase() {
+  try {
+    if (location.protocol === "file:") return "";
+    return location.origin + "/api/rss-to-ics";
+  } catch (e) { return ""; }
+}
+function rssBuildSubUrl() {
+  const input = document.getElementById("rssUrl");
+  const url = ((input && input.value) || "").trim();
+  if (!/^https?:\/\/.+/i.test(url)) return null;
+  const base = rssSubBase();
+  if (!base) return null;
+  const durEl = document.getElementById("rssDuration");
+  const dur = (durEl && durEl.value) || "60";
+  const tplEl = document.getElementById("rssTitleTpl");
+  const tpl = (tplEl && tplEl.value) || "{title}";
+  const uidEl = document.getElementById("rssUidPrefix");
+  const uid = ((uidEl && uidEl.value) || "rss2ics").trim().replace(/^@/, "") || "rss2ics";
+  const params = new URLSearchParams();
+  params.set("url", url);
+  params.set("tz", rssCurrentTz());
+  params.set("dur", dur === "allday" ? "allday" : dur);
+  params.set("limit", "50");
+  if (tpl.indexOf("{summary}") >= 0) params.set("title", "summary");
+  if (uid !== "rss2ics") params.set("uid", uid);
+  return { http: base + "?" + params.toString() };
+}
+function rssBuildSub() {
+  const box = document.getElementById("rssSubBox");
+  const msg = document.getElementById("rssSubMsg");
+  const input = document.getElementById("rssUrl");
+  const url = ((input && input.value) || "").trim();
+  const built = rssBuildSubUrl();
+  if (!built) {
+    if (box) box.style.display = "none";
+    if (msg) {
+      msg.textContent = !rssSubBase()
+        ? "❌ 本地双击打开（file://）没有后端端点。请用线上地址打开本页（如 https://ics-maker.pages.dev/）再生成订阅链接。"
+        : "❌ 请先在上面填入一个以 http(s):// 开头的订阅地址";
+    }
+    return;
+  }
+  const webcal = built.http.replace(/^https?:/, "webcal:");
+  const wcEl = document.getElementById("rssSubWebcal");
+  const htEl = document.getElementById("rssSubHttp");
+  if (wcEl) { wcEl.textContent = webcal; wcEl.setAttribute("href", webcal); }
+  if (htEl) htEl.textContent = built.http;
+  if (box) box.style.display = "block";
+  if (msg) msg.textContent = "✅ 已生成。手机 / 电脑上直接点上面的 webcal 链接即可添加；Google 日历请复制 https 链接。";
+}
+function rssCopyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  let done = false;
+  try { done = document.execCommand("copy"); } catch (e) { done = false; }
+  document.body.removeChild(ta);
+  return done ? Promise.resolve() : Promise.reject(new Error("execCommand copy failed"));
+}
+function rssCopySub() {
+  const msg = document.getElementById("rssSubMsg");
+  const box = document.getElementById("rssSubBox");
+  const built = rssBuildSubUrl();
+  if (!built) { if (msg) msg.textContent = "❌ 请先点「🔗 生成订阅链接」"; return; }
+  if (box && box.style.display === "none") rssBuildSub();
+  const el = document.getElementById("rssSubHttp");
+  const text = (el && el.textContent) || built.http;
+  rssCopyText(text).then(
+    function () { if (msg) msg.textContent = "✅ 已复制 https 订阅地址（Google 日历用这个；iPhone / Mac 用 webcal）"; },
+    function () { if (msg) msg.textContent = "❌ 复制失败，请手动选中网址复制"; }
+  );
+}
+async function rssTestSub() {
+  const msg = document.getElementById("rssSubMsg");
+  const built = rssBuildSubUrl();
+  if (!built) {
+    if (msg) {
+      msg.textContent = !rssSubBase()
+        ? "❌ 本地双击打开（file://）没有后端端点，无法测试；请用线上地址打开本页。"
+        : "❌ 请先在上面填入一个以 http(s):// 开头的订阅地址";
+    }
+    return;
+  }
+  if (msg) msg.textContent = "⏳ 正在测试端点…";
+  try {
+    const r = await fetch(built.http, { headers: { Accept: "text/calendar, */*" } });
+    const ct = (r.headers.get("content-type") || "").toLowerCase();
+    if (!r.ok) {
+      const t = await r.text();
+      if (msg) msg.textContent = "❌ 端点返回 HTTP " + r.status + (t ? "：" + String(t).split("\n")[0] : "");
+      return;
+    }
+    if (ct.indexOf("text/calendar") < 0) {
+      if (msg) msg.textContent = "❌ 返回的不是 ICS —— 当前站点可能没有 /api/rss-to-ics（把仓库部署到 Cloudflare Pages 即可）。";
+      return;
+    }
+    const ics = await r.text();
+    const n = (ics.match(/BEGIN:VEVENT/g) || []).length;
+    const cal = (ics.match(/X-WR-CALNAME:([^\r\n]*)/) || [])[1] || "未命名";
+    const skipped = r.headers.get("x-ics-skipped");
+    if (msg) msg.textContent = "✅ 测试通过：日历「" + cal + "」共 " + n + " 条事件" +
+      (skipped && skipped !== "0" ? "（另有 " + skipped + " 条无日期被跳过）" : "") + "。可以订阅了。";
+  } catch (e) {
+    if (msg) msg.textContent = "❌ 测试失败：" + e.message + "。若本站不是 Cloudflare Pages，请先把仓库部署过去以启用该端点。";
+  }
 }
 
 /* ---------- 初始化 ---------- */
