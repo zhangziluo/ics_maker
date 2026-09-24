@@ -218,10 +218,10 @@
   <p class="subtitle">表格转ICS · 知识科普 · 赛程目录。纯前端处理，数据不离开浏览器。</p>
 
   <div class="tabs">
-    <div class="tab active" onclick="switchMainTab('excel', this)">📊 Excel转ICS</div>
-    <div class="tab" onclick="switchMainTab('know', this)">🧠 知识科普</div>
-    <div class="tab" onclick="switchMainTab('nav', this)">🌐 赛程目录</div>
-    <div class="tab" onclick="switchMainTab('rss', this)">📡 RSS转ICS</div>
+    <div class="tab active" data-name="excel" onclick="switchMainTab('excel', this)">📊 Excel转ICS</div>
+    <div class="tab" data-name="know" onclick="switchMainTab('know', this)">🧠 知识科普</div>
+    <div class="tab" data-name="nav" onclick="switchMainTab('nav', this)">🌐 赛程目录</div>
+    <div class="tab" data-name="rss" onclick="switchMainTab('rss', this)">📡 RSS转ICS</div>
   </div>
 
   <!-- ========== Tab 1: Excel转ICS ========== -->
@@ -288,8 +288,9 @@
 
       <div class="tpl">
         <h5>📋 待加入日程</h5>
-        <p class="tpl-tip">在「知识科普」里点击"＋加入日程"的内容会暂存在这里，可复制到表格后一起生成。</p>
+        <p class="tpl-tip">在「知识科普」里点击"＋加入日程"的内容会暂存在这里；点「➡️ 填入粘贴表格」（可整条填、也可只填某一条）就会变成上面表格里的行，改完直接生成 ICS。</p>
         <div id="pendingList"></div>
+        <div class="know-gen-stats" id="pendingMsg"></div>
       </div>
     </div>
   </div>
@@ -2206,6 +2207,11 @@ function addHistToExcel(enc) {
   });
   if (typeof updatePendingBar === 'function') updatePendingBar();
   if (typeof switchMainTab === 'function') switchMainTab('excel');
+  if (typeof showToast === 'function') showToast('✅ 已加入「📋 待加入日程」，可点「➡️ 填入粘贴表格」');
+  setTimeout(function () {
+    const el = document.getElementById('pendingList');
+    try { if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { }
+  }, 60);
 }
 
 /* ---------- 通用提示 ---------- */
@@ -2409,10 +2415,13 @@ function excelGenerate() {
 /* ---------- 页面初始化 ---------- */
 /* ---------- 主Tab切换 ---------- */
 function switchMainTab(name, el) {
+  /* el 可省略：例如「＋加入日程」加入后自动跳到 Excel 页签，此时按 data-name 找按钮 */
+  const target = el || document.querySelector('.tab[data-name="' + name + '"]');
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  el.classList.add('active');
+  if (target) target.classList.add('active');
   ['excel', 'know', 'nav', 'rss'].forEach(n => {
-    document.getElementById('tab-' + n).classList.toggle('active', n === name);
+    const box = document.getElementById('tab-' + n);
+    if (box) box.classList.toggle('active', n === name);
   });
   if (name === 'know') {
     switchKnowTab('hist', document.querySelector('.know-sub-tab.active') || document.querySelector('.know-sub-tab'));
@@ -2427,15 +2436,74 @@ window._histPending = window._histPending || [];
 function updatePendingBar() {
   const box = document.getElementById('pendingList');
   if (!box) return;
-  if (!window._histPending.length) {
+  const list = window._histPending || [];
+  if (!list.length) {
     box.innerHTML = '<div class="know-empty">暂无待加入的日程</div>';
     return;
   }
-  box.innerHTML = window._histPending.map((it, i) => `
+  box.innerHTML = list.map((it, i) => `
     <div class="nav-card">
-      <div class="nav-card-title">${it['标题']}</div>
-      <div class="nav-card-note">${it['日期']} ${it['时间']} ｜ ${it['备注'] || ''}</div>
-    </div>`).join('');
+      <div class="nav-card-title">${navEsc(it['标题'])}</div>
+      <div class="nav-card-note">${navEsc(it['日期'])} ${navEsc(it['时间'])} ｜ ${navEsc(it['备注'] || '')}</div>
+      <div class="nav-card-actions">
+        <button class="btn-primary btn-sm" onclick="pendingFillPaste(${i})">➡️ 填入粘贴表格</button>
+      </div>
+    </div>`).join('') + `
+    <div class="know-gen-row" style="margin-top:8px;">
+      <div style="flex:0 0 auto;display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn-purple btn-sm" onclick="pendingFillPaste()">➡️ 全部填入粘贴表格</button>
+        <button class="btn-secondary btn-sm" onclick="pendingClear()">🗑 清空待加入</button>
+      </div>
+    </div>`;
+}
+function pendingMsg(text) {
+  const m = document.getElementById('pendingMsg');
+  if (m) m.textContent = text || '';
+}
+/* 待加入日程 → 粘贴表格：字段一一对应（标题/日期/时间/地点/备注） */
+function pendingRowOf(it) {
+  const g = function (k) { return String(it && it[k] == null ? '' : it[k]).trim(); };
+  return [g('标题'), g('日期'), g('时间'), g('地点'), g('备注')];
+}
+function pasteTrimTrailingBlank() {
+  /* 去掉尾部所有全空行（允许清到 0 行，由调用方决定是否补回占位行） */
+  while (pasteRows.length) {
+    const last = pasteRows[pasteRows.length - 1];
+    if (!last.every(function (v) { return !String(v == null ? '' : v).trim(); })) break;
+    pasteRows.pop();
+  }
+}
+function pasteHasRow(row) {
+  const key = function (r) { return r.map(function (v) { return String(v == null ? '' : v).trim(); }).join('\u0001'); };
+  const k = key(row);
+  for (let i = 0; i < pasteRows.length; i++) { if (key(pasteRows[i]) === k) return true; }
+  return false;
+}
+function pendingFillPaste(onlyIndex) {
+  const list = window._histPending || [];
+  if (!list.length) { pendingMsg('ℹ️ 「待加入日程」是空的：在「知识科普」里点「＋加入日程」先收藏几条'); return; }
+  const picked = (typeof onlyIndex === 'number' && onlyIndex >= 0 && onlyIndex < list.length)
+    ? [list[onlyIndex]] : list;
+  pasteTrimTrailingBlank();          /* 先去掉尾部空行，别把内容填到一堆空行下面 */
+  let added = 0, dup = 0;
+  picked.forEach(function (it) {
+    const row = pendingRowOf(it);
+    if (pasteHasRow(row)) { dup++; return; }   /* 重复点不会灌进重复行 */
+    pasteRows.push(row);
+    added++;
+  });
+  pasteEnsureRows(1);              /* 至少留一行，别让表变成空的 */
+  pasteRenderAll();
+  pendingMsg('✅ 已填入 ' + added + ' 行' + (dup ? '（跳过 ' + dup + ' 行重复）' : '') +
+    (added ? ' —— 可在表格里修改后点「📥 生成 ICS」' : '（表格里已经有这些行了）'));
+  const tb = document.getElementById('pasteTbodyX') || document.getElementById('pasteTbody');
+  const table = tb && tb.closest ? tb.closest('.paste-table') : null;
+  try { if (table && table.scrollIntoView) table.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { }
+}
+function pendingClear() {
+  window._histPending = [];
+  updatePendingBar();
+  pendingMsg('🗑 已清空「待加入日程」（已经填进粘贴表格的行不受影响）');
 }
 
 /* ============================================================
