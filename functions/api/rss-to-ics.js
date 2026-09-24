@@ -209,8 +209,41 @@ function collectItems(doc) {
   return [];
 }
 
-/* 单条条目 → { id, title, link, description, date(Date|null) } */
-function itemToPost(el) {
+/* ---------- Event RSS（ev: 命名空间）辅助 ---------- */
+/* 纯日期（2005-10-08 / 20051008）→ 全天事件；带时间 → 定时事件 */
+function isDateOnly(s) {
+  return /^\d{4}-?\d{2}-?\d{2}$/.test(String(s || '').trim());
+}
+/* 任意日期写法 → YYYYMMDD */
+function ymd8(s) {
+  return String(s || '').trim().replace(/[-/]/g, '').replace(/[^0-9]/g, '').slice(0, 8);
+}
+function parseDateValue(s) {
+  const v = String(s || '').trim();
+  if (!v) return null;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+}
+/* ISO 8601 duration（PT2H30M / P1D / PT45M）→ 毫秒 */
+function parseIsoDuration(s) {
+  const m = /^P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/i.exec(String(s || '').trim());
+  if (!m) return null;
+  const ms = ((((+m[1] || 0) * 7 + (+m[2] || 0)) * 24 + (+m[3] || 0)) * 60 + (+m[4] || 0)) * 60000 +
+    Math.round((+m[5] || 0) * 1000);
+  return ms > 0 ? ms : null;
+}
+function evStatusOf(s) {
+  const v = String(s || '').trim().toLowerCase();
+  if (v === 'canceled' || v === 'cancelled') return 'CANCELLED';
+  if (v === 'tentative') return 'TENTATIVE';
+  return '';
+}
+
+/* 单条条目 → 事件对象
+   优先用 Event RSS 扩展（ev:startdate 等，解析器按 localName 匹配，所以 ev:startdate → 'startdate'）；
+   没有 ev: 时退回发布时间（pubDate / published / updated）。
+   useEv=false 可强制忽略 ev: 扩展。 */
+function itemToPost(el, useEv) {
   const title = textOf(childByLocal(el, ['title']));
 
   // link：Atom 取 <link href>（优先 rel=alternate），RSS 取 <link> 文本
@@ -225,20 +258,51 @@ function itemToPost(el) {
     if (!href && !link) link = textOf(c);
   }
 
-  // 日期：按优先级取（Atom 的 published 优先于 updated）
-  let dateStr = '';
-  const dateNames = ['pubdate', 'published', 'updated', 'date', 'issued', 'created'];
-  for (let i = 0; i < dateNames.length && !dateStr; i++) {
-    const c = childByLocal(el, [dateNames[i]]);
-    if (c) dateStr = textOf(c);
-  }
-  let date = null;
-  if (dateStr) {
-    const d = new Date(dateStr);
-    if (!isNaN(d.getTime())) date = d;
-  }
+  /* ---- Event RSS 扩展 ---- */
+  const evStartRaw = useEv ? textOf(childByLocal(el, ['startdate'])) : '';
+  const evEndRaw = useEv ? textOf(childByLocal(el, ['enddate'])) : '';
+  const evDurRaw = useEv ? textOf(childByLocal(el, ['duration'])) : '';
+  const status = useEv ? evStatusOf(textOf(childByLocal(el, ['eventstatus']))) : '';
+  const place = useEv ? [textOf(childByLocal(el, ['location'])), textOf(childByLocal(el, ['street'])),
+    textOf(childByLocal(el, ['city'])), textOf(childByLocal(el, ['region'])),
+    textOf(childByLocal(el, ['country']))].filter(Boolean).join(', ') : '';
 
-  // 摘要：description | summary | content
+  /* ---- 开始时间：ev:startdate 优先，其次 pubDate / published / updated ---- */
+  let dateRaw = '', allDayYmd = '';
+  if (evStartRaw) {
+    if (isDateOnly(evStartRaw)) allDayYmd = ymd8(evStartRaw);
+    else dateRaw = evStartRaw;
+  }
+  if (!allDayYmd && !dateRaw) {
+    const dateNames = ['pubdate', 'published', 'updated', 'date', 'issued', 'created'];
+    for (let i = 0; i < dateNames.length && !dateRaw; i++) {
+      const c = childByLocal(el, [dateNames[i]]);
+      if (c) dateRaw = textOf(c);
+    }
+    if (dateRaw && isDateOnly(dateRaw)) { allDayYmd = ymd8(dateRaw); dateRaw = ''; }
+  }
+  const date = parseDateValue(dateRaw);
+
+  /* ---- 结束时间：ev:enddate → ev:duration ---- */
+  let endDate = null, endAllDayYmd = '';
+  if (evEndRaw) {
+    if (isDateOnly(evEndRaw)) endAllDayYmd = ymd8(evEndRaw);
+    else endDate = parseDateValue(evEndRaw);
+  } else if (evDurRaw) {
+    const ms = parseIsoDuration(evDurRaw);
+    if (ms && date) endDate = new Date(date.getTime() + ms);
+    else if (ms && allDayYmd) {
+      const days = Math.round(ms / 86400000);
+      if (days > 1) {
+        const d = new Date(Date.UTC(+allDayYmd.slice(0, 4), +allDayYmd.slice(4, 6) - 1, +allDayYmd.slice(6, 8)));
+        d.setUTCDate(d.getUTCDate() + days - 1);
+        endAllDayYmd = ymd8(d.toISOString().slice(0, 10));
+      }
+    }
+  }
+  if (endDate && date && endDate.getTime() <= date.getTime()) endDate = null;
+
+  /* ---- 摘要：description | summary | content ---- */
   let raw = '';
   const sumNames = ['description', 'summary', 'content'];
   for (let i = 0; i < sumNames.length && !raw; i++) {
@@ -249,10 +313,15 @@ function itemToPost(el) {
 
   const id = textOf(childByLocal(el, ['guid', 'id'])) || link || title || '';
 
-  return { id: id, title: title, link: link, description: description, date: date };
+  return {
+    id: id, title: title, link: link, description: description,
+    date: date, allDayYmd: allDayYmd, endDate: endDate, endAllDayYmd: endAllDayYmd,
+    location: stripHtml(place).slice(0, 120), status: status,
+    fromEv: !!(evStartRaw || evEndRaw || evDurRaw)
+  };
 }
 
-function parseFeed(xml) {
+function parseFeed(xml, useEv) {
   const root = parseXml(xml);
   const doc = findDocElement(root);
   if (!doc) throw new Error('没有找到 rss / feed / rdf 根元素');
@@ -264,7 +333,7 @@ function parseFeed(xml) {
   const title = textOf(childByLocal(meta, ['title'])) || 'RSS 订阅';
   const subtitle = textOf(childByLocal(meta, ['subtitle', 'description']));
 
-  const items = collectItems(doc).map(itemToPost);
+  const items = collectItems(doc).map(function (el) { return itemToPost(el, useEv); });
   return { title: title, description: stripHtml(subtitle).slice(0, 200), items: items };
 }
 
@@ -326,6 +395,27 @@ function nextDayYmd(ymd) {
   return d.toISOString().slice(0, 10).replace(/-/g, '');
 }
 
+/* ============================================================
+ * 边缘缓存（Cache API）
+ * 注意：函数返回的 Response 上带 Cache-Control **不会**让 Cloudflare CDN 自动缓存；
+ * 真正生效的是 caches.default（Cache API）。缓存键 = 去掉 fresh 之后的完整 URL。
+ * ============================================================ */
+const CACHE_TTL = 900; /* 秒：15 分钟 */
+
+async function cacheGet(key) {
+  try {
+    if (typeof caches === 'undefined') return null;
+    const hit = await caches.default.match(key);
+    return hit || null;
+  } catch (e) { return null; }
+}
+async function cachePut(key, resp) {
+  try {
+    if (typeof caches === 'undefined') return;
+    await caches.default.put(key, resp);
+  } catch (e) { /* 缓存不可用就静默忽略，不影响主流程 */ }
+}
+
 const HELP = [
   '参数（除 url 外都可省略）：',
   '  url     必填，RSS / Atom 订阅地址（需 encodeURIComponent）',
@@ -336,6 +426,8 @@ const HELP = [
   '  title   title（仅标题，默认）| summary（标题 + 摘要前 20 字）',
   '  uid     UID 后缀，默认 rss2ics',
   '  name    覆盖日历名称（默认取订阅源标题）',
+  '  ev      1（默认）优先用 Event RSS 的 ev:startdate 当作事件时间；0 = 只用发布时间',
+  '  fresh   1 = 跳过读缓存、重新抓取并刷新缓存（用于缓存预热 / 强制刷新）',
   '',
   '示例：/api/rss-to-ics?url=https%3A%2F%2Fsspai.com%2Ffeed&tz=Asia%2FShanghai&dur=60&limit=30'
 ].join('\n');
@@ -361,11 +453,13 @@ function buildIcs(feed, opt) {
   let events = 0;
   let skipped = 0;
 
+  let evItems = 0;
+
   for (let i = 0; i < slice.length; i++) {
     const it = slice[i];
-    if (!it.date) { skipped++; continue; }
+    if (!it.date && !it.allDayYmd) { skipped++; continue; }
+    if (it.fromEv) evItems++;
 
-    const start = wallClock(it.date, opt.timeZone);
     let uid = 'rss' + hash36(it.id || it.link || it.title);
     if (seen[uid]) { seen[uid]++; uid = uid + '-' + seen[uid]; } else { seen[uid] = 1; }
 
@@ -373,19 +467,30 @@ function buildIcs(feed, opt) {
     let summary = title;
     if (opt.titleMode === 'summary' && it.description) summary = title + ' - ' + it.description.slice(0, 20);
 
+    const allDayEv = !!it.allDayYmd || opt.allDay;
     out.push('BEGIN:VEVENT');
     out.push('UID:' + uid + '@' + opt.uidPrefix);
     out.push('DTSTAMP:' + dtstamp);
-    if (opt.allDay) {
-      out.push('DTSTART;VALUE=DATE:' + start.date);
-      out.push('DTEND;VALUE=DATE:' + nextDayYmd(start.date));
+    if (allDayEv) {
+      const sYmd = it.allDayYmd || wallClock(it.date, opt.timeZone).date;
+      /* 日期型 ev:enddate 按「含末日」理解（Event RSS 年代的习惯），
+         而 iCal 的 DTEND 对全天是**独占**的 → 末日再 +1 天 */
+      let eYmd = it.endAllDayYmd ? nextDayYmd(it.endAllDayYmd) : nextDayYmd(sYmd);
+      if (eYmd <= sYmd) eYmd = nextDayYmd(sYmd);
+      out.push('DTSTART;VALUE=DATE:' + sYmd);
+      out.push('DTEND;VALUE=DATE:' + eYmd);
     } else {
-      const end = wallClock(new Date(it.date.getTime() + opt.durMin * 60000), opt.timeZone);
-      out.push('DTSTART;TZID=' + opt.timeZone + ':' + start.date + 'T' + start.hh + start.mi + '00');
-      out.push('DTEND;TZID=' + opt.timeZone + ':' + end.date + 'T' + end.hh + end.mi + '00');
+      const s = wallClock(it.date, opt.timeZone);
+      /* 有 ev:enddate 就用真实结束时间，否则用 URL 上的 dur 参数 */
+      const endMs = it.endDate ? it.endDate.getTime() : (it.date.getTime() + opt.durMin * 60000);
+      const e = wallClock(new Date(endMs), opt.timeZone);
+      out.push('DTSTART;TZID=' + opt.timeZone + ':' + s.date + 'T' + s.hh + s.mi + '00');
+      out.push('DTEND;TZID=' + opt.timeZone + ':' + e.date + 'T' + e.hh + e.mi + '00');
     }
     out.push('SUMMARY:' + escapeIcs(summary));
     if (it.description) out.push('DESCRIPTION:' + escapeIcs(it.description));
+    if (it.location) out.push('LOCATION:' + escapeIcs(it.location));
+    if (it.status) out.push('STATUS:' + it.status);
     if (it.link) out.push('URL:' + it.link);
     if (opt.remind > 0) {
       out.push('BEGIN:VALARM');
@@ -413,10 +518,13 @@ function buildIcs(feed, opt) {
   const tail = ['END:VCALENDAR'];
 
   const ics = head.concat(out, tail).map(foldLine).join(CRLF) + CRLF;
-  return { ics: ics, events: events, skipped: skipped, total: feed.items.length };
+  return { ics: ics, events: events, skipped: skipped, total: feed.items.length, evItems: evItems };
 }
 
-export async function onRequest({ request }) {
+export async function onRequest(context) {
+  const request = context.request;
+  const waitUntil = typeof context.waitUntil === 'function' ? function (p) { context.waitUntil(p); } : null;
+
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     return textError('只支持 GET 请求', 405);
@@ -431,6 +539,8 @@ export async function onRequest({ request }) {
   const timeZone = safeTimeZone(q.get('tz'));
   const durRaw = ((q.get('dur') || '60') + '').trim().toLowerCase();
   const allDay = durRaw === 'allday' || durRaw === 'all' || durRaw === '0';
+  const useEv = !/^(0|false|no|off)$/i.test(((q.get('ev') || '1') + '').trim());
+  const fresh = /^(1|true|yes|on)$/i.test(((q.get('fresh') || '') + '').trim());
   const opt = {
     timeZone: timeZone,
     allDay: allDay,
@@ -442,6 +552,22 @@ export async function onRequest({ request }) {
     nameOverride: ((q.get('name') || '') + '').trim(),
     feedUrl: chk.url
   };
+
+  /* ---------- 命中间缘缓存就直接返回（fresh=1 时跳过，用于预热/强刷） ---------- */
+  const cacheUrl = new URL(request.url);
+  cacheUrl.searchParams.delete('fresh');   /* fresh 只决定"读不读缓存"，不能进缓存键，否则预热会另开一份 */
+  const cacheKey = new Request(cacheUrl.toString(), { method: 'GET' });
+
+  if (!fresh) {
+    const hit = await cacheGet(cacheKey);
+    if (hit) {
+      const h = new Headers(hit.headers);
+      h.set('X-ICS-Cache', 'HIT');
+      h.set('Access-Control-Allow-Origin', '*');
+      if (request.method === 'HEAD') return new Response(null, { status: 200, headers: h });
+      return new Response(hit.body, { status: 200, headers: h });
+    }
+  }
 
   let xml;
   try {
@@ -464,7 +590,7 @@ export async function onRequest({ request }) {
 
   let feed;
   try {
-    feed = parseFeed(xml);
+    feed = parseFeed(xml, useEv);
   } catch (e) {
     return textError('解析订阅源失败：' + ((e && e.message) || e), 502);
   }
@@ -476,12 +602,19 @@ export async function onRequest({ request }) {
   const headers = Object.assign({
     'Content-Type': 'text/calendar; charset=utf-8',
     'Content-Disposition': 'inline; filename="rss.ics"',
-    'Cache-Control': 'public, max-age=900, s-maxage=900, stale-while-revalidate=3600',
+    'Cache-Control': 'public, max-age=' + CACHE_TTL + ', s-maxage=' + CACHE_TTL + ', stale-while-revalidate=3600',
     'X-Robots-Tag': 'noindex',
+    'X-ICS-Cache': fresh ? 'REFRESH' : 'MISS',
     'X-ICS-Events': String(built.events),
     'X-ICS-Skipped': String(built.skipped),
-    'X-ICS-Total': String(built.total)
+    'X-ICS-Total': String(built.total),
+    'X-ICS-Ev-Items': String(built.evItems)
   }, CORS_HEADERS);
+
+  /* 写回（或刷新）边缘缓存；用同一套响应头，命中时再改写 X-ICS-Cache */
+  const stored = new Response(built.ics, { status: 200, headers: headers });
+  const put = cachePut(cacheKey, stored);
+  if (waitUntil) waitUntil(put); else await put;
 
   if (request.method === 'HEAD') return new Response(null, { status: 200, headers: headers });
   return new Response(built.ics, { status: 200, headers: headers });

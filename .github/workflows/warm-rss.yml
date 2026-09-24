@@ -1,0 +1,58 @@
+name: RSS 订阅缓存预热
+
+# 为什么不用 Cloudflare 的 cron：
+#   Cloudflare Pages 只支持 onRequest 系列处理器，**没有 cron / scheduled 支持**
+#   （Workers 有 Cron Triggers，但 Pages 项目用不了）。
+#   所以「定时刷新边缘缓存」交给 GitHub Actions：给每条订阅链接加 &fresh=1 打一次。
+#
+# 注意：GitHub 的 schedule 有两条硬限制——
+#   1) 仓库连续 60 天无活动，定时任务会被自动停用；
+#   2) 高峰期可能延迟几分钟到几十分钟，不是精确定时。
+# 想立刻试：Actions 页面 → 本 workflow → Run workflow（workflow_dispatch）。
+
+on:
+  schedule:
+    - cron: "17 */2 * * *"   # 每 2 小时（用 17 分错开整点高峰）
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 预热订阅链接（加 fresh=1 强制刷新边缘缓存）
+        run: |
+          set -u
+          FILE=.github/warm-rss.json
+          if [ ! -f "$FILE" ]; then
+            echo "没有 $FILE，跳过"
+            exit 0
+          fi
+
+          URLS=()
+          mapfile -t URLS < <(jq -r '.urls[]?' "$FILE")
+          echo "共 ${#URLS[@]} 条待预热"
+
+          fail=0
+          for u in "${URLS[@]}"; do
+            [ -z "$u" ] && continue
+            hdr=$(mktemp)
+            body=$(mktemp)
+            code=$(curl -sS -G "$u" --data-urlencode "fresh=1" \
+                        -D "$hdr" -o "$body" -w '%{http_code}' --max-time 30) \
+              || { echo "ERR    $u"; fail=$((fail+1)); rm -f "$hdr" "$body"; continue; }
+
+            cache=$(grep -i '^x-ics-cache:' "$hdr" | tr -d '\r' | awk '{print $2}')
+            events=$(grep -i '^x-ics-events:' "$hdr" | tr -d '\r' | awk '{print $2}')
+            echo "$code  x-ics-cache=${cache:-?}  events=${events:-?}  $u"
+
+            [ "$code" = "200" ] || fail=$((fail+1))
+            rm -f "$hdr" "$body"
+          done
+
+          echo "完成：失败 $fail / ${#URLS[@]}"
+          [ "$fail" = "0" ]

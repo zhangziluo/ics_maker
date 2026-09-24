@@ -609,6 +609,49 @@
         </div>
       </details>
     </div>
+
+    <div class="know-gen">
+      <h4>⚡ 订阅预热 / 定时刷新</h4>
+      <p class="know-gen-tip">日历 App 来取数据时如果边缘缓存是冷的，就得现抓源站（慢，还可能被限速）。这里可以先把缓存热上。「真正的定时刷新」用仓库里的 GitHub Actions（<code>.github/workflows/warm-rss.yml</code>）——因为 <strong>Cloudflare Pages 不支持 cron</strong>。</p>
+
+      <label>要预热的订阅链接（每行一条，存在本机浏览器）</label>
+      <textarea id="rssWarmUrls" rows="3" placeholder="https://ics-maker.pages.dev/api/rss-to-ics?url=..."></textarea>
+
+      <div class="know-gen-row" style="margin-top:10px;">
+        <div style="flex:0 0 auto;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn-purple btn-sm" onclick="rssWarmNow()">⚡ 立即预热</button>
+          <button class="btn-secondary btn-sm" onclick="rssWarmFillCurrent()">➕ 填入当前链接</button>
+          <button class="btn-secondary btn-sm" onclick="rssWarmClear()">🗑 清空</button>
+        </div>
+      </div>
+
+      <div class="know-gen-row" style="margin-top:4px;">
+        <div style="flex:0 0 auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:6px;margin:0;">
+            <input type="checkbox" id="rssWarmAuto" onchange="rssWarmToggleAuto()" style="width:auto;margin:0;">
+            本页打开期间自动预热
+          </label>
+          <select id="rssWarmEvery" onchange="rssWarmToggleAuto()" style="width:auto;">
+            <option value="5">每 5 分钟</option>
+            <option value="15" selected>每 15 分钟</option>
+            <option value="30">每 30 分钟</option>
+            <option value="60">每 60 分钟</option>
+          </select>
+        </div>
+      </div>
+      <div class="know-gen-stats" id="rssWarmMsg"></div>
+
+      <details class="rss-cfg">
+        <summary>⏰ 定时刷新怎么配（GitHub Actions）</summary>
+        <div style="font-size:12px;color:#666;line-height:1.9;margin-top:10px;">
+          <p>1. 把要长期订阅的<strong>完整链接</strong>填进 <code>.github/warm-rss.json</code> 的 <code>urls</code>。</p>
+          <p>2. 提交推送。仓库里的 <code>.github/workflows/warm-rss.yml</code> 会每 2 小时自动给每条链接加 <code>&fresh=1</code> 打一次，把边缘缓存刷新。</p>
+          <p>3. 想立刻试：仓库 <strong>Actions → RSS 订阅缓存预热 → Run workflow</strong>（手动触发）。</p>
+          <p style="color:#c62828;">⚠️ GitHub 的定时任务：<strong>仓库 60 天无活动会被自动停用</strong>，且高峰时段可能延迟几分钟到几十分钟。它不是"精确的秒级调度"。</p>
+          <p>⚠️ 上面的「本页打开期间自动预热」只在页面开着时生效，关掉页面就停。</p>
+        </div>
+      </details>
+    </div>
   </div>
 
 <div class="footer">纯前端处理，数据不离开浏览器</div>
@@ -2602,30 +2645,42 @@ const RSS_PRESETS = [
 const RSS_PREVIEW_LIMIT = 10;
 let rssParsed = [];
 
-/* 取节点下第一个有内容的指定子元素文本 */
-function rssChildText(node, names) {
+/* 取指定子元素：优先按**直接子元素的 localName** 匹配（兼容 ev:startdate / dc:date 等命名空间前缀，
+   避免 querySelector("ev:startdate") 直接抛语法错），再回退 querySelector */
+function rssChildEl(node, names) {
+  const kids = node.children || [];
   for (let i = 0; i < names.length; i++) {
-    const el = node.querySelector(names[i]);
-    if (el && (el.textContent || "").trim()) return el.textContent.trim();
-  }
-  return "";
-}
-
-/* 日期字段：先试常见标签，再回退按 localName 匹配（兼容带命名空间的元素） */
-function rssFindDate(node) {
-  const prefer = ["pubDate", "published", "updated", "date"];
-  for (let i = 0; i < prefer.length; i++) {
-    const el = node.querySelector(prefer[i]);
-    if (el && (el.textContent || "").trim()) return el.textContent.trim();
-  }
-  const kids = node.getElementsByTagName("*");
-  for (let j = 0; j < kids.length; j++) {
-    const ln = (kids[j].localName || "").toLowerCase();
-    if (ln === "pubdate" || ln === "published" || ln === "updated" || ln === "date" || ln === "issued") {
-      const t = (kids[j].textContent || "").trim();
-      if (t) return t;
+    for (let k = 0; k < kids.length; k++) {
+      if ((kids[k].localName || "").toLowerCase() === names[i] && (kids[k].textContent || "").trim()) return kids[k];
     }
   }
+  for (let i = 0; i < names.length; i++) {
+    const el = node.querySelector(names[i]);
+    if (el && (el.textContent || "").trim()) return el;
+  }
+  return null;
+}
+
+/* 取节点下第一个有内容的指定子元素文本 */
+function rssChildText(node, names) {
+  const el = rssChildEl(node, names);
+  return el ? el.textContent.trim() : "";
+}
+
+/* 日期字段：同样走 localName，兼容带命名空间的元素 */
+function rssFindDate(node) {
+  const el = rssChildEl(node, ["pubdate", "published", "updated", "date", "issued", "created"]);
+  return el ? el.textContent.trim() : "";
+}
+
+/* ---------- Event RSS 辅助（与端点保持同一套语义） ---------- */
+function rssIsDateOnly(s) { return /^\d{4}-?\d{2}-?\d{2}$/.test(String(s || "").trim()); }
+function rssYmd8(s) { return String(s || "").trim().replace(/[-/]/g, "").replace(/[^0-9]/g, "").slice(0, 8); }
+function rssDash(ymd8) { return ymd8.slice(0, 4) + "-" + ymd8.slice(4, 6) + "-" + ymd8.slice(6, 8); }
+function rssEvStatus(s) {
+  const v = String(s || "").trim().toLowerCase();
+  if (v === "canceled" || v === "cancelled") return "CANCELLED";
+  if (v === "tentative") return "TENTATIVE";
   return "";
 }
 
@@ -2678,22 +2733,34 @@ function parseFeed(xmlText, timeZone) {
       summary = rssChildText(node, ["description", "summary", "content"]);
       id = rssChildText(node, ["guid"]);
     }
+    /* ---- Event RSS：ev:startdate 优先当作事件时间，没有才用发布时间 ---- */
+    const evStartRaw = rssChildText(node, ["startdate"]);
+    const evStatusRaw = rssChildText(node, ["eventstatus"]);
+    const evPlace = ["location", "street", "city", "region", "country"]
+      .map(function (n) { return rssChildText(node, [n]); })
+      .filter(Boolean).join(", ");
+
     const published = rssFindDate(node);
     if (!id) id = link || title || "";
 
-    // 日期解析（失败留空，不阻断其他行）；按目标时区换算成「墙上时间」——
-    // 17:30+0800 在上海就该是 17:30，而不是把 UTC 的 09:30 直接贴上 TZID 标签
+    // 时间解析（失败留空，不阻断其他行）；按目标时区换算成「墙上时间」——
+    // 17:30+0800 在上海就该是 17:30，而不是把 UTC 的 09:30 直接贴上 TZID 标签。
+    // 纯日期（2026-10-08）→ 全天事件（时间留空）。
     const tz = rssSafeTz(timeZone);
-    let startDate = "", startTime = "", dateObj = null;
-    if (published) {
-      const d = new Date(published);
-      if (!isNaN(d.getTime())) {
-        dateObj = d;
-        const wc = rssWallClock(d, tz);
-        startDate = wc.date;
-        startTime = wc.time;
-      }
-    }
+    let startDate = "", startTime = "", dateObj = null, allDay = false;
+    const applyRaw = function (raw) {
+      const s = String(raw || "").trim();
+      if (!s) return false;
+      if (rssIsDateOnly(s)) { allDay = true; startDate = rssDash(rssYmd8(s)); return true; }
+      const d = new Date(s);
+      if (isNaN(d.getTime())) return false;
+      dateObj = d;
+      const wc = rssWallClock(d, tz);
+      startDate = wc.date;
+      startTime = wc.time;
+      return true;
+    };
+    if (!applyRaw(evStartRaw)) applyRaw(published);
     // 描述清洗：去 HTML 标签、压空白、截断 300 字
     let description = "";
     if (summary) {
@@ -2711,8 +2778,11 @@ function parseFeed(xmlText, timeZone) {
       startDate: startDate,
       startTime: startTime,
       dateObj: dateObj,
+      allDay: allDay,
+      status: rssEvStatus(evStatusRaw),
+      fromEv: !!evStartRaw,
       timezone: tz,
-      location: "",
+      location: evPlace,
       description: description,
       sourceUrl: link || "",
       reminder: 30,
@@ -2774,7 +2844,10 @@ function rssRenderPreview() {
   if (meta) meta.textContent = "共解析 " + rssParsed.length + " 条，下方显示前 " + top.length + " 条（勾选后可「逐条选择加入」）";
   box.innerHTML = top.map(function (it, i) {
     const bad = !it.startDate;
-    const when = bad ? "⚠️ 日期解析失败（加入后可手动填）" : (it.startDate + " " + (it.startTime || ""));
+    const when = bad
+      ? "⚠️ 日期解析失败（加入后可手动填）"
+      : (it.startDate + (it.startTime ? " " + it.startTime : (it.allDay ? " 全天" : "")) +
+        (it.fromEv ? " · 📅活动时间" : "") + (it.status === "CANCELLED" ? " · ⛔已取消" : ""));
     return '<label class="rss-item">' +
       '<input type="checkbox" data-rss-idx="' + i + '" checked>' +
       '<span class="rss-item-body">' +
@@ -2840,7 +2913,7 @@ function rssDelRow(btn) {
   const tr = btn && btn.closest ? btn.closest("tr") : null;
   if (tr && tr.parentNode) tr.parentNode.removeChild(tr);
 }
-function rssAddRow(vals) {
+function rssAddRow(vals, meta) {
   const tb = document.getElementById("rssTbody");
   if (!tb) return;
   const v = vals || [];
@@ -2860,6 +2933,7 @@ function rssAddRow(vals) {
   btn.addEventListener("click", function () { rssDelRow(btn); });
   op.appendChild(btn);
   tr.appendChild(op);
+  tr._rss = meta || null;   /* 行的结构化附加信息（全天 / 状态）；表格不加列，避免隐藏状态过多 */
   tb.appendChild(tr);
 }
 function rssInitRows() {
@@ -2918,7 +2992,9 @@ function rssRowValuesFromItem(it) {
 function rssAddItems(list) {
   if (!list.length) return 0;
   rssRemoveEmptyRows();
-  list.forEach(function (it) { rssAddRow(rssRowValuesFromItem(it)); });
+  list.forEach(function (it) {
+    rssAddRow(rssRowValuesFromItem(it), { allDay: !!it.allDay, status: it.status || "" });
+  });
   return list.length;
 }
 function rssAddAll() {
@@ -2990,8 +3066,11 @@ function rssGenerate() {
     if (!title && !dateRaw && !timeRaw) return;
     if (!title) { skipped++; return; }
 
+    const rowMeta = tr._rss || {};
     const dObj = rssParseLocalDate(dateRaw);
     if (!dObj) { skipped++; noDate++; return; }
+    /* 全天：全局设为全天，或该行来自「纯日期」的 ev:startdate / 发布时间 */
+    const rowAllDay = allDay || !!rowMeta.allDay;
     const y = dObj.getFullYear();
     const mo = String(dObj.getMonth() + 1).padStart(2, "0");
     const da = String(dObj.getDate()).padStart(2, "0");
@@ -3004,7 +3083,7 @@ function rssGenerate() {
     ev += "UID:" + uid + "@" + uidPrefix + CRLF;
     ev += "DTSTAMP:" + dtstamp + CRLF;
 
-    if (allDay) {
+    if (rowAllDay) {
       const next = new Date(dObj.getTime() + 86400000);
       ev += "DTSTART;VALUE=DATE:" + y + mo + da + CRLF;
       ev += "DTEND;VALUE=DATE:" + rssYmd(next) + CRLF;
@@ -3020,6 +3099,7 @@ function rssGenerate() {
     ev += "SUMMARY:" + escapeForICS(title) + CRLF;
     if (desc) ev += "DESCRIPTION:" + escapeForICS(desc) + CRLF;
     if (loc) ev += "LOCATION:" + escapeForICS(loc) + CRLF;
+    if (rowMeta.status) ev += "STATUS:" + rowMeta.status + CRLF;
     if (link) ev += "URL:" + link + CRLF;
     if (reminder > 0) {
       ev += "BEGIN:VALARM" + CRLF + "TRIGGER:-PT" + reminder + "M" + CRLF +
@@ -3157,10 +3237,104 @@ async function rssTestSub() {
   }
 }
 
+/* ---------- 订阅预热 / 定时刷新 ----------
+   原理：带 fresh=1 请求端点 → 跳过读缓存、重新抓源站并回写缓存。
+   注意：Cloudflare Pages 不支持 cron，所以"真定时"由 .github/workflows/warm-rss.yml 承担；
+        页面上的自动预热只在标签页开着时生效。 */
+const RSS_WARM_KEY = "rssWarmUrls";
+let rssWarmTimer = null;
+
+function rssWarmEl() { return document.getElementById("rssWarmUrls"); }
+function rssWarmList() {
+  const el = rssWarmEl();
+  if (!el) return [];
+  return String(el.value || "").split("\n").map(function (s) { return s.trim(); }).filter(Boolean);
+}
+function rssWarmSave() {
+  try { localStorage.setItem(RSS_WARM_KEY, JSON.stringify(rssWarmList())); } catch (e) { }
+}
+function rssWarmLoad() {
+  const el = rssWarmEl();
+  if (!el || el.value.trim()) return;
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem(RSS_WARM_KEY) || "[]") || []; } catch (e) { list = []; }
+  if (list.length) el.value = list.join("\n");
+}
+function rssWarmMsg(text) {
+  const m = document.getElementById("rssWarmMsg");
+  if (m) m.textContent = text || "";
+}
+function rssWarmFillCurrent() {
+  const el = rssWarmEl();
+  const built = rssBuildSubUrl();
+  if (!built) { rssWarmMsg("❌ 请先在上面填入订阅地址（或点「🔗 生成订阅链接」）"); return; }
+  const list = rssWarmList();
+  if (list.indexOf(built.http) >= 0) { rssWarmMsg("ℹ️ 当前链接已在预热列表里"); return; }
+  if (!el) return;
+  list.push(built.http);
+  el.value = list.join("\n");
+  rssWarmSave();
+  rssWarmMsg("✅ 已加入预热列表（共 " + list.length + " 条）");
+}
+function rssWarmClear() {
+  const el = rssWarmEl();
+  if (el) el.value = "";
+  rssWarmSave();
+  rssWarmMsg("");
+}
+/* 预热单条：加 fresh=1 强刷 */
+async function rssWarmOne(url) {
+  const sep = url.indexOf("?") >= 0 ? "&" : "?";
+  const r = await fetch(url + sep + "fresh=1", { headers: { Accept: "text/calendar, */*" } });
+  const ct = (r.headers.get("content-type") || "").toLowerCase();
+  if (!r.ok) {
+    const t = await r.text();
+    return { ok: false, text: "HTTP " + r.status + (t ? "：" + String(t).split("\n")[0].slice(0, 60) : "") };
+  }
+  if (ct.indexOf("text/calendar") < 0) return { ok: false, text: "返回的不是 ICS（本站可能没部署 /api/rss-to-ics）" };
+  await r.text();
+  return { ok: true, cache: r.headers.get("x-ics-cache") || "?", events: r.headers.get("x-ics-events") || "?" };
+}
+async function rssWarmNow(silent) {
+  const list = rssWarmList();
+  if (!list.length) { if (!silent) rssWarmMsg("❌ 预热列表是空的，先点「➕ 填入当前链接」"); return; }
+  if (!silent) rssWarmMsg("⏳ 正在预热 " + list.length + " 条…");
+  let okN = 0;
+  const parts = [];
+  for (let i = 0; i < list.length; i++) {
+    try {
+      const res = await rssWarmOne(list[i]);
+      if (res.ok) { okN++; parts.push("✅ " + res.events + " 条/" + res.cache); }
+      else parts.push("❌ " + res.text);
+    } catch (e) {
+      parts.push("❌ " + e.message);
+    }
+  }
+  const stamp = new Date().toTimeString().slice(0, 5);
+  rssWarmMsg((silent ? "🔄 自动预热 " : "⚡ 预热完成 ") + stamp + "：" + okN + "/" + list.length + " 成功 ｜ " + parts.join(" ｜ "));
+}
+function rssWarmStopAuto() {
+  if (rssWarmTimer) { clearInterval(rssWarmTimer); rssWarmTimer = null; }
+}
+function rssWarmToggleAuto() {
+  const on = document.getElementById("rssWarmAuto");
+  const sel = document.getElementById("rssWarmEvery");
+  rssWarmStopAuto();
+  if (on && on.checked) {
+    const min = Math.max(1, parseInt((sel && sel.value) || "15", 10) || 15);
+    rssWarmTimer = setInterval(function () { rssWarmNow(true); }, min * 60000);
+    rssWarmMsg("🔄 已开启：本页打开期间每 " + min + " 分钟预热一次（关掉页面就停）");
+    rssWarmNow(true);
+  } else {
+    rssWarmMsg("⏸ 已关闭自动预热");
+  }
+}
+
 /* ---------- 初始化 ---------- */
 function rssInit() {
   rssPresetInit();
   rssInitRows();
+  rssWarmLoad();
 }
 
 

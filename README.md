@@ -44,6 +44,7 @@ ics_maker/
 - 可编辑表格 7 列：标题 / 日期 / 时间 / 地点 / 描述 / 链接 / 提醒(分)；可逐格修改、删除行、手动加行。
 - 映射配置：标题模板（仅标题 / 标题 + 摘要前 20 字）、默认时长（30 分 / 1 小时 / 2 小时 / 全天）、时区覆盖、UID 前缀。
 - 日期解析失败的行只在预览里标红提示，**不阻断其他行**；导出时统计跳过的行数与原因。
+- **支持 Event RSS 扩展**：条目带 `ev:startdate` 时就用它当**事件时间**（而不是发布时间）。另支持 `ev:enddate`（真实结束）、`ev:duration`、`ev:location` / `ev:city` / `ev:country`（→ 地点）、`ev:eventstatus`（canceled → `STATUS:CANCELLED`）；纯日期的 `ev:startdate` 视为**全天事件**。加 `ev=0` 可关掉。
 
 ### 跨域与代理（可选）
 
@@ -93,14 +94,31 @@ https://ics-maker.pages.dev/api/rss-to-ics?url=<feed>&tz=Asia%2FShanghai&dur=60&
 | `title` | `title` | 填 `summary` 则标题追加摘要前 20 字 |
 | `uid` | `rss2ics` | UID 后缀 |
 | `name` | 取订阅源标题 | 覆盖日历名称 |
+| `ev` | `1` | `1` 优先用 Event RSS 的 `ev:startdate` 当事件时间；`0` 只用发布时间 |
+| `fresh` | 空 | `1` = 跳过读边缘缓存、重新抓源站并刷新缓存（缓存预热用） |
 
-响应头：`REFRESH-INTERVAL` / `X-PUBLISHED-TTL`（RFC 7986，告诉日历多久刷新一次）、`Cache-Control: s-maxage=900`（保护源站不被客户端轮询打爆）、`X-ICS-Events` / `X-ICS-Skipped` / `X-ICS-Total`（条数报告）、`X-Robots-Tag: noindex`。
+响应头：`REFRESH-INTERVAL` / `X-PUBLISHED-TTL`（RFC 7986，告诉日历多久刷新一次）、`X-ICS-Cache`（`HIT` / `MISS` / `REFRESH`）、`X-ICS-Events` / `X-ICS-Skipped` / `X-ICS-Total` / `X-ICS-Ev-Items`（条数报告）、`X-Robots-Tag: noindex`。
+
+> 缓存说明：函数响应上的 `Cache-Control` 头**不会**让 Cloudflare CDN 自动缓存，所以端点用 **Cache API（`caches.default`）** 真正缓存生成的 ICS，默认 15 分钟。日历 App 轮询时直接命中边缘缓存，不会反复打源站。
 
 **注意**
 - 订阅内容**从订阅源实时派生**，**不包含**页面上手工改的内容；要手工改就用「📥 导出 ICS」。
 - 刷新时机由日历 App 决定（Apple 较勤，Google 约 12–24 小时），不是实时。
 - 端点只接受 `http(s)`，并拒绝本机 / 内网地址（SSRF 防护）；无状态、不存储任何数据。
 - 仅在 **Cloudflare Pages** 上可用；GitHub Pages 上「生成订阅链接」会提示改用导出或先部署。
+
+### 缓存预热 / 定时刷新
+
+日历 App 来取数据时如果边缘缓存是冷的，就得现抓源站（慢，还可能被限速）。两种「热上」的办法：
+
+| 方式 | 怎么用 | 局限 |
+| --- | --- | --- |
+| 页面内预热 | 「📡 RSS转ICS → ⚡ 订阅预热 / 定时刷新」→ 填入链接 → 「⚡ 立即预热」；也可勾「本页打开期间自动预热」（5/15/30/60 分钟） | 自动预热**只在标签页开着时**生效 |
+| **定时刷新（推荐）** | 把完整链接填进 `.github/warm-rss.json` 的 `urls`，仓库里的 `.github/workflows/warm-rss.yml` 会每 2 小时自动打一次 | GitHub 的定时任务：**仓库 60 天无活动会被停用**，且高峰期会延迟 |
+
+> **为什么不用 Cloudflare cron**：Pages 只支持 `onRequest` 系列处理器，**没有 cron / scheduled**（只有 Workers 有 Cron Triggers）。所以「定时」这一块交给 GitHub Actions，也可以随时在仓库 Actions 页面手动 Run workflow。
+>
+> 两条路都是给链接加 `fresh=1` 打一次：端点跳过读缓存 → 重新抓源站 → 把新结果写回缓存，日志里能看到 `x-ics-cache=REFRESH`。
 
 ## 自托管数据
 

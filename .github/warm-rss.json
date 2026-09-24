@@ -1,0 +1,8 @@
+{
+  "_说明": "把你要长期订阅的【完整链接】（含参数）填进 urls。GitHub Actions 定时任务（.github/workflows/warm-rss.yml）会对每条加 &fresh=1 打一次，刷新边缘缓存，让日历 App 来取时是热的。",
+  "_怎么取": "打开 https://ics-maker.pages.dev/ → 「📡 RSS转ICS」→ 填好订阅地址和映射配置 → 点「🔗 生成订阅链接」→ 复制 https 那一条粘到下面。",
+  "_为什么": "Cloudflare Pages 不支持 cron，所以定时刷新放这里；页面上的「本页打开期间自动预热」只在标签页开着时有效。",
+  "urls": [
+    "https://ics-maker.pages.dev/api/rss-to-ics?url=https%3A%2F%2Fsspai.com%2Ffeed&tz=Asia%2FShanghai&dur=60&limit=50"
+  ]
+}
