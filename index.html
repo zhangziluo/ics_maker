@@ -1,0 +1,2457 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>日历ICS工具箱 · 表格转ICS + 知识科普</title>
+<!-- Excel 解析库（Excel转ICS 依赖） -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f5f5f5; color: #222; line-height: 1.5;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .subtitle { font-size: 13px; color: #888; margin-bottom: 16px; }
+
+  .tabs { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 2px solid #e0e0e0; }
+  .tab {
+    flex: 1; padding: 12px 4px; text-align: center; cursor: pointer;
+    font-size: 13px; font-weight: 500; color: #666;
+    border-bottom: 2px solid transparent; margin-bottom: -2px;
+  }
+  .tab.active { color: #7b1fa2; border-bottom-color: #7b1fa2; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* 子Tab */
+  .know-sub-tabs { display: flex; border-bottom: 1px solid #e0e0e0; margin-bottom: 14px; }
+  .know-sub-tab {
+    flex: 1; padding: 10px 2px; text-align: center; cursor: pointer;
+    font-size: 12px; color: #666; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap;
+  }
+  .know-sub-tab.active { color: #7b1fa2; border-bottom-color: #7b1fa2; }
+  .know-sub-content { display: none; }
+  .know-sub-content.active { display: block; }
+
+  /* 卡片 */
+  .know-gen {
+    background: #faf5ff; border: 1px solid #e1bee7;
+    border-radius: 10px; padding: 16px; margin-bottom: 14px;
+  }
+  .know-gen h4 { font-size: 14px; color: #7b1fa2; margin: 0 0 8px; }
+  .know-gen-tip { font-size: 12px; color: #666; margin: 0 0 12px; line-height: 1.6; }
+  .know-gen-row { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 10px; }
+  .know-gen-row > div { flex: 1; }
+  .know-gen-row button { margin-top: 0; white-space: nowrap; }
+  .know-gen-stats { font-size: 11px; color: #666; margin-top: 8px; }
+
+  label { font-size: 13px; display: block; margin-bottom: 4px; }
+  input, select, textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid #ccc;
+    border-radius: 6px; font-size: 14px; font-family: inherit;
+  }
+  button {
+    cursor: pointer; border: none; border-radius: 6px;
+    font-size: 13px; padding: 9px 14px; font-family: inherit;
+  }
+  .btn-purple { background: #7b1fa2; color: #fff; }
+  .btn-sm { padding: 7px 12px; font-size: 12px; }
+  .btn-secondary { background: #ececec; color: #333; }
+  .btn-primary { background: #1976d2; color: #fff; }
+  .btn-dark { background: #333; color: #fff; }
+
+  /* 主题卡片网格 */
+  .know-theme-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .know-theme-card {
+    border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 12px;
+    cursor: pointer; transition: all .15s;
+  }
+  .know-theme-card:hover { border-color: #7b1fa2; background: #faf5ff; }
+  .know-theme-card.active { border-color: #7b1fa2; background: #f3e5f5; }
+  .know-theme-card-emoji { font-size: 18px; }
+  .know-theme-card-name { font-weight: 600; font-size: 13px; margin-top: 2px; }
+  .know-theme-card-desc { font-size: 11px; color: #999; margin-top: 2px; }
+
+  .know-presets { margin-top: 12px; }
+  .know-presets-title { font-size: 12px; font-weight: 600; color: #666; margin-bottom: 6px; }
+  .know-preset-btn {
+    display: inline-block; padding: 4px 10px; margin: 0 4px 4px 0;
+    border: 1px solid #e1bee7; border-radius: 12px; background: #fff;
+    cursor: pointer; font-size: 11px; color: #7b1fa2;
+  }
+  .know-preset-btn:hover { background: #f3e5f5; }
+
+  /* 订阅卡片 */
+  .know-sub-card {
+    border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 12px;
+    margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;
+  }
+  .know-sub-card-info { flex: 1; }
+  .know-sub-card-name { font-size: 13px; font-weight: 500; }
+  .know-sub-card-meta { font-size: 11px; color: #999; }
+  .know-sub-card-actions { display: flex; gap: 6px; }
+  .know-empty { text-align: center; color: #999; padding: 20px 0; font-size: 13px; }
+
+  /* 事件卡片 */
+  .nav-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+  .nav-card-title { font-weight: 600; font-size: 13px; }
+  .nav-card-note { font-size: 12px; color: #555; margin: 6px 0; }
+  .nav-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  /* 结果提示 */
+  .result-msg { margin-top: 14px; padding: 12px; border-radius: 8px; font-size: 12px; display: none; line-height: 1.6; }
+  .result-msg.success { background: #e8f5e9; color: #2e7d32; display: block; }
+  .result-msg.error { background: #ffebee; color: #c62828; display: block; }
+  .result-msg.info { background: #e3f2fd; color: #1565c0; display: block; }
+
+  /* 模板 */
+  .tpl { margin-top: 14px; padding: 14px; background: #f8f9fa; border-radius: 8px; font-size: 13px; }
+  .tpl h5 { font-size: 13px; margin: 0 0 8px; color: #333; }
+  .tpl code { background: #eee; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+  .tpl-tip { font-size: 12px; color: #888; margin: 8px 0; line-height: 1.7; }
+
+  /* 搜索ICS源 */
+  .search-box { position: relative; }
+  .search-box input { padding-right: 44px; }
+  .search-btn {
+    position: absolute; right: 4px; top: 0; width: 36px; height: 36px; margin: 0; padding: 0;
+    background: none; color: #7b1fa2; font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .src-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px; border: 1px solid #eee; border-radius: 8px; margin-bottom: 8px;
+  }
+  .src-item:hover { border-color: #7b1fa2; }
+  .src-info { flex: 1; }
+  .src-name { font-weight: 500; font-size: 14px; }
+  .src-desc { font-size: 12px; color: #999; margin-top: 2px; }
+  .src-cat { display: inline-block; font-size: 11px; color: #7b1fa2; background: #f3e5f5; padding: 2px 8px; border-radius: 10px; margin-top: 4px; }
+  .src-dl {
+    flex-shrink: 0; width: 36px; height: 36px; margin: 0; padding: 0;
+    background: #e8f5e9; color: #2e7d32; border-radius: 50%; font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .src-dl:hover { background: #c8e6c9; }
+
+  .footer { text-align: center; margin-top: 24px; font-size: 12px; color: #999; }
+
+  @media (max-width: 600px) {
+    .know-gen-row { flex-direction: column; }
+    .know-theme-grid { grid-template-columns: 1fr; }
+  }
+/* 少数民族节日 */
+  .eth-card { border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
+  .eth-card > summary { padding: 10px 12px; cursor: pointer; font-size: 13px; font-weight: 600; background: #faf5ff; list-style: none; }
+  .eth-card > summary::-webkit-details-marker { display: none; }
+  .eth-card[open] > summary { border-bottom: 1px solid #eee; }
+  .eth-fests { padding: 6px 12px; }
+  .eth-fest { padding: 6px 0; border-bottom: 1px dashed #eee; font-size: 12px; }
+  .eth-fest:last-child { border-bottom: none; }
+  .eth-fest-name { font-weight: 600; color: #7b1fa2; margin-right: 6px; }
+  .eth-fest-date { color: #999; font-size: 11px; }
+  .eth-fest-desc { color: #555; margin-top: 2px; }
+  .eth-emoji { margin-right: 4px; }
+  .eth-area { color: #999; font-weight: 400; font-size: 11px; margin-left: 6px; }
+  .eth-count { float: right; color: #7b1fa2; font-weight: 400; font-size: 11px; }
+  /* 赛程目录 */
+  .src-region { font-size: 11px; color: #999; font-weight: 400; margin-left: 6px; }
+  .src-acts { display: flex; gap: 6px; flex-shrink: 0; }
+  .src-act { width: 32px; height: 32px; margin: 0; padding: 0; font-size: 14px; background: #eef1f5; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .src-act:hover { background: #dfe4ea; }
+  .src-act.dl { background: #e8f5e9; }
+  .src-act.dl:hover { background: #c8e6c9; }
+  .src-act.del { background: #fdecea; }
+  .src-act.del:hover { background: #f9d4d0; }
+  .src-group { margin-bottom: 14px; }
+  .src-group-title { font-size: 12px; font-weight: 600; color: #7b1fa2; margin: 6px 0 8px; }
+  .src-group-count { font-weight: 400; color: #999; margin-left: 6px; }
+  .nav-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+  .nav-add > div { flex: 1; min-width: 130px; }
+  .paste-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .paste-table th, .paste-table td { border: 1px solid #e0e0e0; padding: 6px 8px; text-align: left; vertical-align: top; }
+  .paste-table th { background: #faf5ff; color: #7b1fa2; font-weight: 600; white-space: nowrap; }
+  .paste-table td[contenteditable] { min-width: 60px; }
+  .paste-table td[contenteditable]:focus { outline: 2px solid #7b1fa2; background: #fffdf5; }
+  .paste-table .paste-op { width: 34px; text-align: center; }
+  .paste-del { background: none; color: #c62828; padding: 2px 6px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📋 日历ICS工具箱</h1>
+  <p class="subtitle">表格转ICS · 知识科普 · 赛程目录。纯前端处理，数据不离开浏览器。</p>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchMainTab('excel', this)">📊 Excel转ICS</div>
+    <div class="tab" onclick="switchMainTab('know', this)">🧠 知识科普</div>
+    <div class="tab" onclick="switchMainTab('nav', this)">🌐 赛程目录</div>
+  </div>
+
+  <!-- ========== Tab 1: Excel转ICS ========== -->
+  <div id="tab-excel" class="tab-content active">
+    <div class="know-gen">
+      <h4>📄 从表格生成 ICS 日程</h4>
+      <p class="know-gen-tip">上传 Excel 表格，自动读取第一行表头，生成可导入手机/电脑日历的 ICS 文件。每条事件按"提醒提前"时间弹窗。</p>
+
+      <label>上传Excel文件</label>
+      <input type="file" id="excelFile" accept=".xlsx,.xls">
+      <p class="know-gen-tip" style="margin-top:4px;">支持 .xlsx 和 .xls，自动读取第一个工作表</p>
+
+      <div class="know-gen-row" style="margin-top:12px;">
+        <div>
+          <label>提醒提前（分钟）</label>
+          <input type="number" id="alarmMin" value="15" min="0" max="9999">
+        </div>
+        <div style="display:flex;align-items:flex-end;">
+          <button id="excelGenerateBtn" class="btn-purple btn-sm" onclick="excelGenerate()">📥 生成 ICS 文件</button>
+        </div>
+      </div>
+
+      <div id="excelResult" class="result-msg"></div>
+
+      <div class="tpl">
+        <h5>📄 Excel 模板</h5>
+        <p>表格需包含以下列（第一行为表头，顺序不限）：</p>
+        <p class="tpl-tip" style="margin-top:6px;">
+          <code>标题</code>　<code>日期</code>　<code>时间</code>　<code>地点</code>　<code>备注</code>
+        </p>
+        <p class="tpl-tip">
+          日期列用"文本"格式填 <code>2026-09-24</code><br>
+          时间列用"文本"格式填 <code>08:30</code><br>
+          标题/时间/日期 三列为必填，地点/备注可留空
+        </p>
+        <button class="btn-secondary btn-sm" onclick="excelDownloadTemplate()">⬇️ 下载Excel模板</button>
+      </div>
+
+      <div class="tpl">
+        <h5>📋 待加入日程</h5>
+        <p class="tpl-tip">在「知识科普」里点击"＋加入日程"的内容会暂存在这里，可复制到表格后一起生成。</p>
+        <div id="pendingList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== Tab 2: 知识科普 ========== -->
+  <div id="tab-know" class="tab-content">
+    <div class="know-sub-tabs">
+      <div class="know-sub-tab active" onclick="switchKnowTab('hist', this)">📜 历史上的今天</div>
+      <div class="know-sub-tab" onclick="switchKnowTab('theme', this)">🔬 学科知识</div>
+      <div class="know-sub-tab" onclick="switchKnowTab('eth', this)">🎎 民族节日</div>
+      <div class="know-sub-tab" onclick="switchKnowTab('subs', this)">📋 我的订阅</div>
+    </div>
+
+    <!-- 📜 历史上的今天 -->
+    <div id="know-hist" class="know-sub-content active">
+      <div class="know-gen">
+        <h4>📜 历史上的今天 · 全年ICS</h4>
+        <p class="know-gen-tip">内置精选历史事件，每天中午12:00提醒一条。生成后导入系统日历，全年不用管。</p>
+        <div class="know-gen-row">
+          <div>
+            <label>年份</label>
+            <input type="number" id="histGenYear" value="2026" min="1900" max="2100">
+          </div>
+          <div style="display:flex;align-items:flex-end;">
+            <button class="btn-purple btn-sm" onclick="generateHistYearICS()">📥 生成全年ICS</button>
+          </div>
+        </div>
+        <div class="know-gen-stats" id="histGenStats"></div>
+      </div>
+
+      <div class="know-gen">
+        <h4>🔍 按日期浏览</h4>
+        <p class="know-gen-tip">查看某一天发生过什么，支持在线抓取。可单条加入日程。</p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+          <div style="flex:1;min-width:120px;">
+            <label>日期</label>
+            <input type="date" id="knowHistDate">
+          </div>
+          <div style="flex:1;min-width:120px;">
+            <label>来源</label>
+            <select id="knowHistSource">
+              <option value="byabbe">Byabbe / 维基英文</option>
+              <option value="zhwiki">中文维基</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:120px;">
+            <label>类型</label>
+            <select id="knowHistType">
+              <option value="all">全部</option>
+              <option value="events">事件</option>
+              <option value="births">出生</option>
+              <option value="deaths">逝世</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:120px;display:flex;gap:8px;align-items:flex-end;">
+            <button class="btn-sm btn-secondary" style="flex:1;" onclick="loadKnowHist()">🔍 加载</button>
+            <button class="btn-sm btn-dark" style="flex:1;" onclick="randomKnowHist()">🎲 随机</button>
+          </div>
+        </div>
+        <div id="knowHistResult"></div>
+      </div>
+    </div>
+
+    <!-- 🔬 学科知识 -->
+    <div id="know-theme" class="know-sub-content">
+      <div class="know-gen">
+        <h4>🔬 学科知识日历</h4>
+        <p class="know-gen-tip">选一个学科主题，生成全年ICS。每天中午12:00推送一条该学科的重要事件。导入系统日历，零打扰地学习。</p>
+
+        <div class="know-theme-grid" id="themeGrid">
+          <div class="know-theme-card active" data-theme="world" onclick="selectTheme(this)">
+            <div class="know-theme-card-emoji">📜</div>
+            <div class="know-theme-card-name">世界历史</div>
+            <div class="know-theme-card-desc">通用历史大事件</div>
+          </div>
+          <div class="know-theme-card" data-theme="science" onclick="selectTheme(this)">
+            <div class="know-theme-card-emoji">🔬</div>
+            <div class="know-theme-card-name">科学史</div>
+            <div class="know-theme-card-desc">重大发现与发明</div>
+          </div>
+          <div class="know-theme-card" data-theme="astronomy" onclick="selectTheme(this)">
+            <div class="know-theme-card-emoji">🔭</div>
+            <div class="know-theme-card-name">天文日历</div>
+            <div class="know-theme-card-desc">天象与航天里程碑</div>
+          </div>
+          <div class="know-theme-card" data-theme="computer" onclick="selectTheme(this)">
+            <div class="know-theme-card-emoji">💻</div>
+            <div class="know-theme-card-name">计算机史</div>
+            <div class="know-theme-card-desc">技术里程碑</div>
+          </div>
+          <div class="know-theme-card" data-theme="art" onclick="selectTheme(this)">
+            <div class="know-theme-card-emoji">🎨</div>
+            <div class="know-theme-card-name">艺术史</div>
+            <div class="know-theme-card-desc">名作与艺术家</div>
+          </div>
+          <div class="know-theme-card" data-theme="literature" onclick="selectTheme(this)">
+            <div class="know-theme-card-emoji">📖</div>
+            <div class="know-theme-card-name">文学日历</div>
+            <div class="know-theme-card-desc">作家与作品</div>
+          </div>
+          <div class="know-theme-card" data-theme="music" onclick="selectTheme(this)">
+            <div class="know-theme-card-emoji">🎵</div>
+            <div class="know-theme-card-name">音乐史</div>
+            <div class="know-theme-card-desc">作曲家与首演</div>
+          </div>
+          <div class="know-theme-card" data-theme="medicine" onclick="selectTheme(this)">
+            <div class="know-theme-card-emoji">🧬</div>
+            <div class="know-theme-card-name">医学史</div>
+            <div class="know-theme-card-desc">医学突破</div>
+          </div>
+          <div class="know-theme-card" data-theme="festival" onclick="selectTheme(this)">
+            <div class="know-theme-card-emoji">🏮</div>
+            <div class="know-theme-card-name">农历节日</div>
+            <div class="know-theme-card-desc">春节、端午、中秋等</div>
+          </div>
+        </div>
+
+        <div class="know-gen-row">
+          <div>
+            <label>年份</label>
+            <input type="number" id="themeGenYear" value="2026" min="1900" max="2100">
+          </div>
+          <div style="display:flex;align-items:flex-end;">
+            <button class="btn-purple btn-sm" onclick="generateThemeICS()">📥 生成学科ICS</button>
+          </div>
+        </div>
+        <div class="know-gen-stats" id="themeGenStats"></div>
+
+        <div class="know-presets">
+          <div class="know-presets-title">💡 推荐组合（一键批量生成）</div>
+          <span class="know-preset-btn" onclick="applyPreset('student')">🎓 学生党：科学+文学+天文</span>
+          <span class="know-preset-btn" onclick="applyPreset('tech')">💻 程序员：计算机+科学+天文</span>
+          <span class="know-preset-btn" onclick="applyPreset('liberal')">📚 文艺向：艺术+文学+音乐</span>
+          <span class="know-preset-btn" onclick="applyPreset('med')">🏥 医疗：医学+科学+天文</span>
+          <span class="know-preset-btn" onclick="applyPreset('festival')">🏮 传统节日：农历节日</span>
+        </div>
+      </div>
+    </div>
+
+        <!-- 🎎 少数民族节日 -->
+    <div id="know-eth" class="know-sub-content">
+      <div class="know-gen">
+        <h4>🎎 少数民族传统节日</h4>
+        <p class="know-gen-tip">收录中国 55 个少数民族的 164 个传统节日。可按民族、地区或节日名搜索；点开任意民族可生成该民族的节日日历 ICS，也可一次生成全部。</p>
+        <div class="know-gen-row">
+          <div>
+            <label>年份</label>
+            <input type="number" id="ethGenYear" value="2026" min="1900" max="2100">
+          </div>
+          <div style="display:flex;align-items:flex-end;">
+            <button class="btn-purple btn-sm" onclick="generateEthAllICS()">📥 生成全部民族ICS</button>
+          </div>
+        </div>
+        <div class="know-gen-stats" id="ethGenStats"></div>
+      </div>
+      <div class="know-gen">
+        <h4>🔍 按民族浏览</h4>
+        <input type="text" id="ethSearch" placeholder="搜索民族、地区或节日，如：傣族、泼水节、那达慕" oninput="renderEthList()">
+        <p class="know-gen-tip" style="margin:8px 0 0;">点击标题栏可展开 / 收起该民族的节日列表。</p>
+        <div style="margin-top:10px;" id="ethList"></div>
+      </div>
+    </div>
+
+<!-- 📋 我的订阅 -->
+    <div id="know-subs" class="know-sub-content">
+      <div class="know-gen">
+        <h4>📋 已生成的ICS记录</h4>
+        <p class="know-gen-tip">这里记录你在当前设备上生成过的知识ICS。数据存在本浏览器，换设备不共享。</p>
+        <div id="subsList"></div>
+        <button class="btn-sm btn-secondary" onclick="clearSubs()" style="margin-top:8px;">🗑️ 清空记录</button>
+      </div>
+
+      <div class="know-gen">
+        <h4>📱 导入指南</h4>
+        <div style="font-size:12px;color:#666;line-height:1.8;">
+          <p><strong>🍎 iPhone / 苹果日历：</strong>把ICS文件发给自己（微信文件传输助手等）→ 点击文件 → "用其他应用打开" → 选"日历" → 导入。</p>
+          <p style="margin-top:6px;"><strong>🤖 小米 / 华为 / 安卓：</strong>文件管理器里点击ICS → 用日历打开 → 选账户（本地/小米云/Google）→ 确定。</p>
+          <p style="margin-top:6px;"><strong>💻 Outlook：</strong>文件 → 打开和导出 → 导入/导出 → 导入iCalendar文件。</p>
+          <p style="margin-top:6px;"><strong>🌐 Google日历：</strong>网页版 → 设置 → 导入和导出 → 选文件导入。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== Tab 3: 赛程目录 ========== -->
+  <div id="tab-nav" class="tab-content">
+    <div class="know-gen">
+      <h4>📂 在线 ICS 源目录</h4>
+      <p class="know-gen-tip">按分类浏览可订阅的日历源。「🔗 复制链接」「📅 订阅」对任何源都可用；「⬇️ 下载」仅对允许跨域的源（如 GitHub raw / jsDelivr 托管）有效，失败会自动提示改用复制或订阅。</p>
+      <div class="search-box">
+        <input type="text" id="navSearch" placeholder="搜索：节假日、月相、足球、高考…" oninput="renderNavList()">
+        <button class="search-btn" onclick="renderNavList()">🔍</button>
+      </div>
+
+      <div id="navResults"></div>
+      <div id="navMsg" class="result-msg"></div>
+
+      <div style="margin-top:14px;padding:14px;background:#f8f9fa;border-radius:8px;">
+        <p style="font-size:13px;color:#666;margin-bottom:8px;">➕ 添加自定义源（存在本机浏览器，可随时删除）</p>
+        <div class="nav-add">
+          <div><label>名称</label><input type="text" id="navNewName" placeholder="如：我的课程表"></div>
+          <div><label>ICS / 订阅链接</label><input type="text" id="navNewUrl" placeholder="https://… 或 webcal://…"></div>
+          <div style="flex:0 0 auto;"><button class="btn-secondary btn-sm" onclick="navAddCustom()">添加</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="know-gen">
+      <h4>📝 粘贴生成 ICS（可编辑表格）</h4>
+      <p class="know-gen-tip">把日程文字粘贴进下面的表格：支持从 Excel / 网页复制（Tab 分列、换行分行）自动铺开，也可以逐格手填。填好后点「生成 ICS」。</p>
+      <div style="overflow-x:auto;">
+        <table class="paste-table">
+          <thead><tr><th>标题</th><th>日期</th><th>时间</th><th>地点</th><th>备注</th><th></th></tr></thead>
+          <tbody id="pasteTbody"></tbody>
+        </table>
+      </div>
+      <div class="know-gen-row" style="margin-top:10px;">
+        <div style="flex:0 0 auto;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn-secondary btn-sm" onclick="pasteAddRow()">➕ 加一行</button>
+          <button class="btn-secondary btn-sm" onclick="pasteClear()">🗑 清空</button>
+        </div>
+        <div style="flex:0 0 auto;max-width:130px;">
+          <label>提醒提前（分钟）</label>
+          <input type="number" id="pasteAlarm" value="15" min="0" max="9999">
+        </div>
+        <div style="flex:0 0 auto;">
+          <button class="btn-purple btn-sm" onclick="pasteGenerate()">📥 生成 ICS</button>
+        </div>
+      </div>
+      <div class="know-gen-stats" id="pasteMsg"></div>
+    </div>
+  </div>
+
+<div class="footer">纯前端处理，数据不离开浏览器</div>
+</div>
+
+<script>
+/* ============================================================
+ * events.js —— 知识科普事件库（内联）
+ * key = "月.日"，value = [{year, text, link}, ...]
+ * link 为空时生成器自动拼百度百科搜索链接
+ * ============================================================ */
+/* ============================================================
+ * events.js — 知识科普事件库
+ * 供 index.html 与 generate.html 共同引用
+ * 结构：key = "月.日"，value = [{year, text, link}, ...]
+ * link 为空字符串时，生成器自动拼百度百科搜索链接
+ * ============================================================ */
+
+/* ---------- 通用兜底（没有精选事件的日子用这些） ---------- */
+const HIST_FILLER_EVENTS = [
+  {year: "—", text: "今天在历史上是平静的一天"},
+  {year: "—", text: "这天没有特别重大的事件记录"},
+  {year: "—", text: "历史上的今天，留给未来书写"},
+  {year: "—", text: "这一天，世界按下了暂停键"},
+  {year: "—", text: "今天适合翻开一本历史书"},
+  {year: "—", text: "这天，某位伟人正在路上"},
+  {year: "—", text: "历史的长河中，今天是一滴水"},
+  {year: "—", text: "这一天，世界在等待下一个故事"},
+  {year: "—", text: "今天，时间静静流淌"},
+  {year: "—", text: "这天适合思考：历史由谁书写？"},
+  {year: "—", text: "历史上的今天，平凡也是常态"},
+  {year: "—", text: "这一天，地球照常转动"},
+];
+
+/* ---------- 世界历史精选（核心库，全年覆盖） ---------- */
+const HIST_EVENTS_DB = {
+  "1.1": [{year: "1863", text: "林肯颁布《解放宣言》", link: "https://baike.baidu.com/item/解放宣言"},
+          {year: "1979", text: "中美正式建交", link: "https://baike.baidu.com/item/中美建交"}],
+  "1.2": [{year: "1492", text: "西班牙收复格拉纳达，收复失地运动结束", link: "https://baike.baidu.com/item/收复失地运动"},
+          {year: "1905", text: "日俄战争：旅顺口战役结束", link: ""}],
+  "1.3": [{year: "1521", text: "马丁·路德被教皇逐出教会", link: "https://baike.baidu.com/item/马丁·路德"},
+          {year: "2004", text: "勇气号火星车成功着陆火星", link: "https://baike.baidu.com/item/勇气号火星探测器"}],
+  "1.4": [{year: "1643", text: "艾萨克·牛顿出生", link: "https://baike.baidu.com/item/艾萨克·牛顿"},
+          {year: "2007", text: "苹果发布第一代iPhone", link: "https://baike.baidu.com/item/iPhone_1"}],
+  "1.5": [{year: "1933", text: "旧金山至奥克兰海湾大桥动工", link: ""},
+          {year: "1999", text: "欧元正式诞生", link: "https://baike.baidu.com/item/欧元"}],
+  "1.6": [{year: "1412", text: "圣女贞德出生", link: "https://baike.baidu.com/item/圣女贞德"}],
+  "1.7": [{year: "1558", text: "法国加来被英军占领两百多年后收复", link: ""},
+          {year: "1610", text: "伽利略发现木星四大卫星", link: "https://baike.baidu.com/item/伽利略卫星"}],
+  "1.8": [{year: "1642", text: "伽利略·伽利莱逝世", link: "https://baike.baidu.com/item/伽利略·伽利莱"},
+          {year: "1935", text: "猫王埃尔维斯·普雷斯利出生", link: "https://baike.baidu.com/item/埃尔维斯·普雷斯利"}],
+  "1.9": [{year: "475", text: "西罗马帝国最后一位皇帝即位", link: ""},
+          {year: "2007", text: "苹果CEO乔布斯发布iPhone", link: "https://baike.baidu.com/item/史蒂夫·乔布斯"}],
+  "1.10": [{year: "49BC", text: "恺撒渡过卢比孔河，引发内战", link: "https://baike.baidu.com/item/卢比孔河"},
+           {year: "1920", text: "国际联盟正式成立", link: "https://baike.baidu.com/item/国际联盟"}],
+  "1.11": [{year: "532", text: "拜占庭帝国尼卡起义", link: ""}],
+  "1.12": [{year: "1519", text: "马克西米利安一世逝世，查理五世继承西班牙王位", link: ""},
+           {year: "1875", text: "中国清代小说家李汝珍逝世", link: ""}],
+  "1.13": [{year: "1794", text: "美国国会通过宪法第十一修正案", link: ""}],
+  "1.14": [{year: "1639", text: "康涅狄格基本法签署，北美第一部成文宪法", link: ""},
+           {year: "1950", text: "苏联米格-17首次试飞", link: "https://baike.baidu.com/item/米格-17"}],
+  "1.15": [{year: "1559", text: "伊丽莎白一世加冕为英格兰女王", link: "https://baike.baidu.com/item/伊丽莎白一世"},
+           {year: "2001", text: "维基百科正式上线", link: "https://zh.wikipedia.org/wiki/维基百科"},
+           {year: "2009", text: "全美航空1549号班机哈德逊河迫降", link: "https://baike.baidu.com/item/全美航空1549号班机事故"}],
+  "1.16": [{year: "27BC", text: "罗马元老院授予屋大维奥古斯都称号", link: "https://baike.baidu.com/item/奥古斯都"},
+           {year: "1979", text: "伊朗伊斯兰革命，巴列维王朝覆灭", link: ""}],
+  "1.17": [{year: "1377", text: "教廷从阿维尼翁迁回罗马", link: ""},
+           {year: "1945", text: "苏联红军解放华沙", link: ""}],
+  "1.18": [{year: "1126", text: "金朝攻陷北宋汴京", link: "https://baike.baidu.com/item/靖康之变"},
+           {year: "1919", text: "巴黎和会召开", link: "https://baike.baidu.com/item/巴黎和会"}],
+  "1.19": [{year: "1419", text: "百年战争：鲁昂向英军投降", link: ""}],
+  "1.20": [{year: "1265", text: "英格兰议会首次召开", link: ""},
+           {year: "1942", text: "纳粹万湖会议决定最终解决方案", link: "https://baike.baidu.com/item/万湖会议"}],
+  "1.21": [{year: "1793", text: "法国国王路易十六被处决", link: "https://baike.baidu.com/item/路易十六"},
+           {year: "1976", text: "协和式超音速客机首次商业飞行", link: "https://baike.baidu.com/item/协和式飞机"}],
+  "1.22": [{year: "1506", text: "教宗尤利乌斯二世组建瑞士卫队", link: ""},
+           {year: "1905", text: "俄国血腥星期日", link: "https://baike.baidu.com/item/血腥星期日"}],
+  "1.23": [{year: "1556", text: "明朝嘉靖大地震，人类史上死亡最多地震", link: "https://baike.baidu.com/item/嘉靖大地震"},
+           {year: "1960", text: "深海潜水器Trieste下潜到马里亚纳海沟", link: ""}],
+  "1.24": [{year: "41", text: "罗马皇帝卡里古拉被刺杀", link: ""},
+           {year: "1848", text: "加州发现黄金，引发淘金热", link: "https://baike.baidu.com/item/加利福尼亚淘金潮"}],
+  "1.25": [{year: "1533", text: "亨利八世与安妮·博林秘密结婚", link: ""},
+           {year: "1924", text: "第一届冬季奥运会在法国夏蒙尼开幕", link: "https://baike.baidu.com/item/1924年冬季奥运会"}],
+  "1.26": [{year: "1788", text: "英国在悉尼湾建立首个殖民地", link: ""},
+           {year: "1950", text: "印度宪法生效，成为共和国", link: ""}],
+  "1.27": [{year: "1756", text: "莫扎特出生", link: "https://baike.baidu.com/item/沃尔夫冈·阿玛多伊斯·莫扎特"},
+           {year: "1967", text: "阿波罗1号火灾事故", link: "https://baike.baidu.com/item/阿波罗1号"}],
+  "1.28": [{year: "1547", text: "英格兰国王亨利八世逝世", link: "https://baike.baidu.com/item/亨利八世"},
+           {year: "1986", text: "挑战者号航天飞机升空后爆炸", link: "https://baike.baidu.com/item/挑战者号航天飞机灾难"}],
+  "1.29": [{year: "1856", text: "维多利亚女王设立维多利亚十字勋章", link: ""}],
+  "1.30": [{year: "1649", text: "查理一世被处决", link: "https://baike.baidu.com/item/查理一世"},
+           {year: "1948", text: "圣雄甘地被刺杀", link: "https://baike.baidu.com/item/莫罕达斯·卡拉姆昌德·甘地"}],
+  "1.31": [{year: "1606", text: "火药阴谋策划者盖伊·福克斯被处决", link: ""},
+           {year: "1958", text: "美国第一颗人造卫星探险者1号发射", link: "https://baike.baidu.com/item/探险者1号"}],
+
+  "2.1": [{year: "1327", text: "爱德华三世加冕为英格兰国王", link: ""},
+          {year: "2003", text: "哥伦比亚号航天飞机返航时解体", link: "https://baike.baidu.com/item/哥伦比亚号航天飞机灾难"}],
+  "2.2": [{year: "962", text: "奥托大帝加冕为神圣罗马帝国皇帝", link: ""},
+          {year: "1848", text: "美墨战争结束，签署瓜达卢佩-伊达尔戈条约", link: ""}],
+  "2.3": [{year: "1488", text: "迪亚士发现好望角", link: "https://baike.baidu.com/item/巴尔托洛梅乌·迪亚士"},
+          {year: "1959", text: "摇滚歌手巴迪·霍利空难去世", link: ""}],
+  "2.4": [{year: "960", text: "赵匡胤发动陈桥兵变建立宋朝", link: "https://baike.baidu.com/item/陈桥兵变"},
+          {year: "2004", text: "Facebook正式上线", link: "https://baike.baidu.com/item/Facebook"}],
+  "2.5": [{year: "1783", text: "瑞典热气球首次飞行", link: ""}],
+  "2.6": [{year: "1685", text: "查理二世逝世，詹姆斯二世继位", link: ""},
+          {year: "1952", text: "伊丽莎白二世继位", link: "https://baike.baidu.com/item/伊丽莎白二世"}],
+  "2.7": [{year: "1301", text: "爱德华成为首位康沃尔公爵", link: ""}],
+  "2.8": [{year: "1587", text: "玛丽·斯图亚特被处决", link: "https://baike.baidu.com/item/玛丽一世"},
+          {year: "1910", text: "威廉·杜兰特组建通用汽车公司", link: ""}],
+  "2.9": [{year: "474", text: "芝诺加冕为东罗马帝国皇帝", link: ""},
+          {year: "1969", text: "波音747首飞", link: "https://baike.baidu.com/item/波音747"}],
+  "2.10": [{year: "1763", text: "七年战争结束，签署巴黎条约", link: ""},
+           {year: "1996", text: "IBM深蓝首次对战卡斯帕罗夫", link: "https://baike.baidu.com/item/深蓝计算机"}],
+  "2.11": [{year: "1531", text: "亨利八世被教皇逐出教会", link: ""},
+           {year: "1990", text: "纳尔逊·曼德拉获释", link: "https://baike.baidu.com/item/纳尔逊·曼德拉"}],
+  "2.12": [{year: "1554", text: "简·格雷被处决", link: ""},
+           {year: "1809", text: "亚伯拉罕·林肯和查尔斯·达尔文同日出生", link: "https://baike.baidu.com/item/亚伯拉罕·林肯"}],
+  "2.13": [{year: "1633", text: "伽利略抵达罗马接受宗教审判", link: ""},
+           {year: "1945", text: "德累斯顿大轰炸", link: ""}],
+  "2.14": [{year: "1014", text: "亨利二世加冕为神圣罗马帝国皇帝", link: ""},
+           {year: "1929", text: "芝加哥情人节大屠杀", link: ""}],
+  "2.15": [{year: "1113", text: "教宗帕斯加尔二世承认医院骑士团", link: ""},
+           {year: "2001", text: "人类基因组计划草图发表", link: "https://baike.baidu.com/item/人类基因组计划"}],
+  "2.16": [{year: "1923", text: "霍华德·卡特打开图坦卡蒙墓室", link: "https://baike.baidu.com/item/图坦卡蒙"},
+           {year: "1959", text: "菲德尔·卡斯特罗成为古巴总理", link: "https://baike.baidu.com/item/菲德尔·卡斯特罗"}],
+  "2.17": [{year: "1370", text: "条顿骑士团赢得普鲁德战役", link: ""},
+           {year: "1600", text: "乔尔丹诺·布鲁诺被烧死", link: "https://baike.baidu.com/item/乔尔丹诺·布鲁诺"}],
+  "2.18": [{year: "1229", text: "腓特烈二世第六次十字军，和平进入耶路撒冷", link: ""},
+           {year: "1930", text: "冥王星被发现", link: "https://baike.baidu.com/item/冥王星"}],
+  "2.19": [{year: "1878", text: "托马斯·爱迪生获得留声机专利", link: "https://baike.baidu.com/item/留声机"},
+           {year: "1942", text: "日军轰炸达尔文", link: ""}],
+  "2.20": [{year: "1472", text: "奥尔登堡的克里斯蒂安继承挪威王位", link: ""},
+           {year: "1962", text: "约翰·格伦成为首位绕地球飞行的美国人", link: ""}],
+  "2.21": [{year: "1613", text: "米哈伊尔·罗曼诺夫当选沙皇，罗曼诺夫王朝开始", link: ""},
+           {year: "1916", text: "凡尔登战役爆发", link: "https://baike.baidu.com/item/凡尔登战役"}],
+  "2.22": [{year: "1371", text: "罗伯特二世加冕为苏格兰国王，斯图亚特王朝开始", link: ""},
+           {year: "1980", text: "美国冰球队击败苏联（冰上奇迹）", link: ""}],
+  "2.23": [{year: "1455", text: "古腾堡圣经印刷完成", link: "https://baike.baidu.com/item/古腾堡圣经"},
+           {year: "1945", text: "硫磺岛升旗", link: ""}],
+  "2.24": [{year: "1303", text: "罗斯林战役", link: ""}],
+  "2.25": [{year: "1570", text: "教宗庇护五世将伊丽莎白一世逐出教会", link: ""},
+           {year: "1986", text: "菲律宾人民力量革命推翻马科斯", link: ""}],
+  "2.26": [{year: "1815", text: "拿破仑逃离厄尔巴岛", link: "https://baike.baidu.com/item/拿破仑·波拿巴"}],
+  "2.27": [{year: "380", text: "罗马帝国皇帝狄奥多西一世确立基督教为国教", link: ""},
+           {year: "1933", text: "德国国会大厦纵火案", link: "https://baike.baidu.com/item/国会大厦纵火案"}],
+  "2.28": [{year: "1525", text: "库奥特莫克被西班牙人处决", link: ""},
+           {year: "1953", text: "沃森和克里克发现DNA双螺旋结构", link: "https://baike.baidu.com/item/DNA双螺旋结构"}],
+  "2.29": [{year: "1504", text: "哥伦布在牙买加利用月食骗土著", link: "https://baike.baidu.com/item/克里斯托弗·哥伦布"}],
+
+  "3.1": [{year: "1562", text: "法国宗教战争（胡格诺战争）爆发", link: ""},
+          {year: "1872", text: "黄石国家公园成立，世界首个国家公园", link: "https://baike.baidu.com/item/黄石国家公园"}],
+  "3.2": [{year: "986", text: "路易五世加冕为法兰西国王", link: ""},
+          {year: "1969", text: "协和式飞机首飞", link: "https://baike.baidu.com/item/协和式飞机"}],
+  "3.3": [{year: "1575", text: "印度阿克巴大帝击败孟加拉苏丹", link: ""},
+          {year: "1938", text: "石油首次从沙特阿拉伯开采", link: ""}],
+  "3.4": [{year: "51", text: "尼禄被收养为继承人", link: ""},
+          {year: "1789", text: "美国第一届国会在纽约召开", link: ""}],
+  "3.5": [{year: "1046", text: "纳斯赫书法首次使用", link: ""},
+          {year: "1770", text: "波士顿大屠杀", link: "https://baike.baidu.com/item/波士顿大屠杀"}],
+  "3.6": [{year: "1447", text: "尼古拉五世当选教宗", link: ""},
+          {year: "1836", text: "阿拉莫战役开始", link: ""}],
+  "3.7": [{year: "161", text: "马库斯·奥勒留成为罗马帝国皇帝", link: "https://baike.baidu.com/item/马可·奥勒留"},
+          {year: "1876", text: "亚历山大·贝尔获得电话专利", link: "https://baike.baidu.com/item/亚历山大·格拉汉姆·贝尔"}],
+  "3.8": [{year: "1010", text: "波斯诗人菲尔多西完成《列王纪》", link: ""},
+          {year: "1917", text: "俄国二月革命", link: "https://baike.baidu.com/item/俄国二月革命"}],
+  "3.9": [{year: "141", text: "安东尼·庇护成为罗马皇帝", link: ""}],
+  "3.10": [{year: "241BC", text: "第一次布匿战争结束", link: ""},
+           {year: "1876", text: "亚历山大·贝尔第一次电话通话", link: ""}],
+  "3.11": [{year: "222", text: "罗马皇帝埃拉伽巴路斯被刺杀", link: ""},
+           {year: "2011", text: "日本东北大地震及海啸", link: "https://baike.baidu.com/item/东日本大地震"}],
+  "3.12": [{year: "538", text: "维提吉斯向贝利撒留投降", link: ""},
+           {year: "1938", text: "德奥合并", link: ""}],
+  "3.13": [{year: "1138", text: "康拉德三世当选罗马人民的国王", link: ""}],
+  "3.14": [{year: "1489", text: "凯瑟琳·科妮莉亚成为塞浦路斯女王", link: ""},
+           {year: "1879", text: "阿尔伯特·爱因斯坦出生", link: "https://baike.baidu.com/item/阿尔伯特·爱因斯坦"}],
+  "3.15": [{year: "44BC", text: "恺撒被刺杀", link: "https://baike.baidu.com/item/恺撒被刺杀"},
+           {year: "1493", text: "哥伦布返回西班牙", link: "https://baike.baidu.com/item/克里斯托弗·哥伦布"}],
+  "3.16": [{year: "597BC", text: "巴比伦王尼布甲尼撒二世攻陷耶路撒冷", link: ""},
+           {year: "1521", text: "麦哲伦抵达关岛", link: "https://baike.baidu.com/item/斐迪南·麦哲伦"}],
+  "3.17": [{year: "45BC", text: "尤利乌斯·恺撒在蒙达战役获胜", link: ""},
+           {year: "461", text: "圣帕特里克逝世", link: "https://baike.baidu.com/item/圣帕特里克"}],
+  "3.18": [{year: "37", text: "卡里古拉成为罗马皇帝", link: ""},
+           {year: "1965", text: "苏联宇航员列昂诺夫完成首次太空行走", link: "https://baike.baidu.com/item/阿列克谢·列昂诺夫"}],
+  "3.19": [{year: "1279", text: "崖山海战，南宋灭亡", link: "https://baike.baidu.com/item/崖山海战"},
+           {year: "1932", text: "悉尼海港大桥开通", link: ""}],
+  "3.20": [{year: "235", text: "马克西米努斯·色雷克斯成为罗马皇帝", link: ""},
+           {year: "1995", text: "东京地铁沙林毒气事件", link: "https://baike.baidu.com/item/东京地铁沙林毒气事件"}],
+  "3.21": [{year: "1556", text: "托马斯·克兰麦被处决", link: ""},
+           {year: "1965", text: "马丁·路德·金领导塞尔玛游行", link: "https://baike.baidu.com/item/马丁·路德·金"}],
+  "3.22": [{year: "1622", text: "詹姆斯敦大屠杀", link: ""}],
+  "3.23": [{year: "1400", text: "韦布里奇战役", link: ""},
+           {year: "1983", text: "罗纳德·里根提出星球大战计划", link: ""}],
+  "3.24": [{year: "1603", text: "苏格兰国王詹姆斯六世继承英格兰王位", link: ""},
+           {year: "1989", text: "埃克森瓦尔迪兹号油轮漏油事故", link: ""}],
+  "3.25": [{year: "1306", text: "罗伯特·布鲁斯加冕为苏格兰国王", link: ""},
+           {year: "1957", text: "《罗马条约》签署，欧洲经济共同体成立", link: ""}],
+  "3.26": [{year: "1027", text: "康拉德二世加冕为神圣罗马帝国皇帝", link: ""},
+           {year: "1971", text: "孟加拉国宣布独立", link: ""}],
+  "3.27": [{year: "1309", text: "教宗克莱门特五世将圣殿骑士团逐出教会", link: ""},
+           {year: "1964", text: "阿拉斯加耶稣受难日地震", link: ""}],
+  "3.28": [{year: "37", text: "罗马皇帝卡里古拉接受元首头衔", link: ""},
+           {year: "1939", text: "西班牙内战结束", link: ""}],
+  "3.29": [{year: "1461", text: "玫瑰战争：陶顿战役", link: ""},
+           {year: "1974", text: "水门事件：约翰·迪恩作证", link: ""}],
+  "3.30": [{year: "1296", text: "第一次苏格兰独立战争：贝里克围城战", link: ""},
+           {year: "1981", text: "罗纳德·里根遇刺未遂", link: "https://baike.baidu.com/item/罗纳德·里根"}],
+  "3.31": [{year: "1146", text: "圣贝尔纳铎布道，第二次十字军东征开始", link: ""},
+           {year: "1990", text: "格鲁吉亚宣布独立", link: ""}],
+
+  "4.1": [{year: "527", text: "查士丁尼一世成为东罗马帝国共治皇帝", link: "https://baike.baidu.com/item/查士丁尼一世"},
+          {year: "1976", text: "苹果公司成立", link: "https://baike.baidu.com/item/苹果公司"}],
+  "4.2": [{year: "1513", text: "胡安·庞塞·德莱昂发现佛罗里达", link: ""},
+          {year: "1982", text: "马岛战争爆发", link: ""}],
+  "4.3": [{year: "1043", text: "爱德华忏悔者加冕为英格兰国王", link: ""}],
+  "4.4": [{year: "1460", text: "牛津大学莫德林学院成立", link: ""},
+          {year: "1968", text: "马丁·路德·金遇刺", link: "https://baike.baidu.com/item/马丁·路德·金"}],
+  "4.5": [{year: "1242", text: "楚德湖战役（冰上之战）", link: ""},
+          {year: "1955", text: "丘吉尔辞去首相职务", link: "https://baike.baidu.com/item/温斯顿·丘吉尔"}],
+  "4.6": [{year: "46BC", text: "塔普苏斯战役，恺撒击败庞培派", link: ""},
+          {year: "1896", text: "第一届现代奥运会在雅典开幕", link: "https://baike.baidu.com/item/1896年夏季奥运会"}],
+  "4.7": [{year: "529", text: "查士丁尼法典颁布", link: "https://baike.baidu.com/item/查士丁尼法典"},
+          {year: "1964", text: "IBM发布System/360", link: ""}],
+  "4.8": [{year: "217", text: "罗马皇帝卡拉卡拉被刺杀", link: ""}],
+  "4.9": [{year: "193", text: "塞普蒂米乌斯·塞维鲁成为罗马皇帝", link: ""},
+          {year: "1865", text: "美国内战：罗伯特·李投降", link: ""}],
+  "4.10": [{year: "837", text: "哈雷彗星到达近日点", link: "https://baike.baidu.com/item/哈雷彗星"},
+           {year: "1912", text: "泰坦尼克号从南安普顿起航", link: "https://baike.baidu.com/item/泰坦尼克号"}],
+  "4.11": [{year: "491", text: "阿纳斯塔修斯一世加冕为东罗马皇帝", link: ""},
+           {year: "1970", text: "阿波罗13号发射", link: "https://baike.baidu.com/item/阿波罗13号"}],
+  "4.12": [{year: "1204", text: "十字军攻陷君士坦丁堡", link: "https://baike.baidu.com/item/第四次十字军东征"},
+           {year: "1961", text: "尤里·加加林成为首位进入太空的人类", link: "https://baike.baidu.com/item/尤里·加加林"}],
+  "4.13": [{year: "1111", text: "亨利五世加冕为神圣罗马帝国皇帝", link: ""},
+           {year: "1970", text: "阿波罗13号：氧气罐爆炸", link: ""}],
+  "4.14": [{year: "43", text: "马克·安东尼在穆蒂纳战役中被击败", link: ""},
+           {year: "1912", text: "泰坦尼克号撞上冰山", link: "https://baike.baidu.com/item/泰坦尼克号"}],
+  "4.15": [{year: "1452", text: "列奥纳多·达·芬奇出生", link: "https://baike.baidu.com/item/列奥纳多·达·芬奇"},
+           {year: "1912", text: "泰坦尼克号沉没", link: "https://baike.baidu.com/item/泰坦尼克号"}],
+  "4.16": [{year: "73", text: "马萨达要塞陷落", link: ""},
+           {year: "1746", text: "卡洛登战役，詹姆斯党起义失败", link: ""}],
+  "4.17": [{year: "69", text: "奥托在贝多里亚库姆战役后被击败自杀", link: ""},
+           {year: "1961", text: "猪湾事件", link: ""}],
+  "4.18": [{year: "1506", text: "教宗尤利乌斯二世为圣彼得大教堂奠基", link: ""},
+           {year: "1906", text: "旧金山大地震", link: "https://baike.baidu.com/item/1906年旧金山大地震"}],
+  "4.19": [{year: "1775", text: "列克星敦和康科德战役，美国独立战争开始", link: ""},
+           {year: "1993", text: "韦科惨案", link: ""}],
+  "4.20": [{year: "1303", text: "巴黎大学成立", link: ""},
+           {year: "1889", text: "阿道夫·希特勒出生", link: "https://baike.baidu.com/item/阿道夫·希特勒"}],
+  "4.21": [{year: "753BC", text: "传说中罗慕路斯建立罗马城", link: "https://baike.baidu.com/item/罗慕路斯与雷穆斯"},
+           {year: "1509", text: "亨利八世继承英格兰王位", link: ""}],
+  "4.22": [{year: "1500", text: "佩德罗·阿尔瓦雷斯·卡布拉尔发现巴西", link: ""},
+           {year: "1970", text: "首个世界地球日", link: "https://baike.baidu.com/item/世界地球日"}],
+  "4.23": [{year: "215BC", text: "罗马神庙落成", link: ""},
+           {year: "1616", text: "莎士比亚和塞万提斯同日逝世", link: "https://baike.baidu.com/item/威廉·莎士比亚"}],
+  "4.24": [{year: "1479BC", text: "图特摩斯三世成为法老", link: ""},
+           {year: "1990", text: "哈勃太空望远镜发射", link: "https://baike.baidu.com/item/哈勃太空望远镜"}],
+  "4.25": [{year: "404", text: "西罗马帝国末代皇帝被废", link: ""},
+           {year: "1953", text: "沃森和克里克在《自然》发表DNA双螺旋论文", link: "https://baike.baidu.com/item/DNA双螺旋结构"}],
+  "4.26": [{year: "1478", text: "帕齐阴谋刺杀美第奇家族失败", link: ""},
+           {year: "1986", text: "切尔诺贝利核事故", link: "https://baike.baidu.com/item/切尔诺贝利核事故"}],
+  "4.27": [{year: "1521", text: "麦哲伦在麦克坦岛被杀", link: ""},
+           {year: "1981", text: "英国王储查尔斯与戴安娜结婚", link: ""}],
+  "4.28": [{year: "357", text: "君士坦提乌斯二世进入罗马", link: ""},
+           {year: "1945", text: "墨索里尼被处决", link: "https://baike.baidu.com/item/贝尼托·墨索里尼"}],
+  "4.29": [{year: "1429", text: "圣女贞德抵达奥尔良", link: ""},
+           {year: "1945", text: "盟军解放达豪集中营", link: ""}],
+  "4.30": [{year: "313", text: "李锡尼和君士坦丁在米兰会晤", link: ""},
+           {year: "1945", text: "希特勒自杀", link: "https://baike.baidu.com/item/阿道夫·希特勒"}],
+
+  "5.1": [{year: "305", text: "戴克里先和马克西米安同时退位", link: ""},
+          {year: "1886", text: "干草市场暴乱，五一劳动节起源", link: "https://baike.baidu.com/item/干草市场暴乱"}],
+  "5.2": [{year: "1194", text: "理查一世将考文垂升格为城市", link: ""},
+          {year: "2011", text: "本·拉登被击毙", link: "https://baike.baidu.com/item/奥萨马·本·拉登"}],
+  "5.3": [{year: "1491", text: "尼纳·德·布拉沃出生", link: ""},
+          {year: "1937", text: "玛格丽特·米切尔《飘》获普利策奖", link: ""}],
+  "5.4": [{year: "1471", text: "玫瑰战争：蒂克斯伯里战役", link: ""},
+          {year: "1979", text: "玛格丽特·撒切尔成为英国首位女首相", link: "https://baike.baidu.com/item/玛格丽特·撒切尔"}],
+  "5.5": [{year: "1260", text: "忽必烈成为蒙古大汗", link: "https://baike.baidu.com/item/忽必烈"},
+          {year: "1821", text: "拿破仑·波拿巴逝世", link: "https://baike.baidu.com/item/拿破仑·波拿巴"}],
+  "5.6": [{year: "1527", text: "罗马之劫，神圣罗马帝国军队洗劫罗马", link: ""},
+          {year: "1937", text: "兴登堡号飞艇起火坠毁", link: ""}],
+  "5.7": [{year: "558", text: "圣索菲亚大教堂穹顶坍塌后重建", link: ""},
+          {year: "1915", text: "卢西塔尼亚号被德国潜艇击沉", link: ""}],
+  "5.8": [{year: "589", text: "奥斯特拉西亚和勃艮第统一", link: ""},
+          {year: "1945", text: "欧洲胜利日，纳粹德国无条件投降", link: "https://baike.baidu.com/item/欧洲胜利日"}],
+  "5.9": [{year: "328", text: "阿塔纳修斯成为亚历山大牧首", link: ""},
+          {year: "1950", text: "罗伯特·舒曼提出舒曼计划", link: ""}],
+  "5.10": [{year: "28BC", text: "中国史书记载最早的太阳黑子观测", link: ""}],
+  "5.11": [{year: "330", text: "君士坦丁堡正式成为罗马帝国新首都", link: "https://baike.baidu.com/item/君士坦丁堡"},
+           {year: "1997", text: "IBM深蓝击败卡斯帕罗夫", link: "https://baike.baidu.com/item/深蓝计算机"}],
+  "5.12": [{year: "1191", text: "理查一世与纳瓦拉的贝伦加丽亚结婚", link: ""},
+           {year: "2008", text: "汶川大地震", link: "https://baike.baidu.com/item/汶川大地震"}],
+  "5.13": [{year: "1373", text: "朱利安·诺里奇收到启示", link: ""},
+           {year: "1981", text: "教皇约翰·保罗二世遇刺", link: ""}],
+  "5.14": [{year: "1607", text: "英国在詹姆斯敦建立首个永久殖民地", link: ""},
+           {year: "1948", text: "以色列宣布独立", link: "https://baike.baidu.com/item/以色列独立宣言"}],
+  "5.15": [{year: "221", text: "刘备称帝，建立蜀汉", link: "https://baike.baidu.com/item/蜀汉"},
+           {year: "1940", text: "麦当劳兄弟在圣贝纳迪诺开设烧烤店", link: ""}],
+  "5.16": [{year: "1204", text: "鲍德温一世加冕为拉丁帝国皇帝", link: ""},
+           {year: "1929", text: "第一届奥斯卡金像奖颁奖", link: "https://baike.baidu.com/item/奥斯卡金像奖"}],
+  "5.17": [{year: "190", text: "塞普蒂米乌斯·塞维鲁在潘诺尼亚称帝", link: ""}],
+  "5.18": [{year: "1804", text: "拿破仑加冕为法兰西皇帝", link: ""},
+           {year: "1980", text: "圣海伦斯火山爆发", link: ""}],
+  "5.19": [{year: "1536", text: "安妮·博林被处决", link: ""}],
+  "5.20": [{year: "325", text: "尼西亚会议开幕", link: ""},
+           {year: "1873", text: "列维·斯特劳斯开始销售蓝色牛仔裤", link: ""}],
+  "5.21": [{year: "293", text: "戴克里先建立四帝共治制", link: ""},
+           {year: "1927", text: "查尔斯·林德伯格完成首次单人不着陆跨大西洋飞行", link: ""}],
+  "5.22": [{year: "1176", text: "阿萨辛派刺杀萨拉丁未遂", link: ""}],
+  "5.23": [{year: "1430", text: "圣女贞德被勃艮第人俘虏", link: ""},
+           {year: "1934", text: "邦妮和克莱德被击毙", link: ""}],
+  "5.24": [{year: "1153", text: "马尔科姆四世加冕为苏格兰国王", link: ""},
+           {year: "1844", text: "塞缪尔·莫尔斯发送首条电报", link: ""}],
+  "5.25": [{year: "240BC", text: "中国史书记载最早的哈雷彗星观测", link: ""},
+           {year: "1977", text: "《星球大战》首映", link: "https://baike.baidu.com/item/星球大战"}],
+  "5.26": [{year: "17", text: "日耳曼尼库斯凯旋进入罗马", link: ""},
+           {year: "1896", text: "尼古拉二世加冕为俄罗斯沙皇", link: ""}],
+  "5.27": [{year: "1644", text: "李自成山海关战败", link: ""},
+           {year: "1937", text: "金门大桥通车", link: "https://baike.baidu.com/item/金门大桥"}],
+  "5.28": [{year: "585BC", text: "日食中断米底-吕底亚战争（泰勒斯预言）", link: ""},
+           {year: "1937", text: "旧金山-奥克兰海湾大桥通车", link: ""}],
+  "5.29": [{year: "1453", text: "奥斯曼帝国攻陷君士坦丁堡，拜占庭帝国灭亡", link: "https://baike.baidu.com/item/君士坦丁堡的陷落"},
+           {year: "1953", text: "埃德蒙·希拉里和丹增·诺盖登顶珠穆朗玛峰", link: "https://baike.baidu.com/item/埃德蒙·希拉里"}],
+  "5.30": [{year: "1431", text: "圣女贞德被烧死", link: "https://baike.baidu.com/item/圣女贞德"},
+           {year: "1922", text: "林肯纪念堂竣工", link: ""}],
+  "5.31": [{year: "1279", text: "荷兰独立战争：海姆斯凯尔克海战", link: ""}],
+
+  "6.1": [{year: "193", text: "狄第乌斯·尤利安努斯被处决", link: ""},
+          {year: "1980", text: "CNN正式开播", link: ""}],
+  "6.2": [{year: "455", text: "汪达尔人洗劫罗马", link: ""},
+          {year: "1953", text: "伊丽莎白二世加冕", link: ""}],
+  "6.3": [{year: "1098", text: "第一次十字军攻陷安条克", link: ""},
+          {year: "1965", text: "爱德华·怀特成为首位太空行走的美国人", link: ""}],
+  "6.4": [{year: "1039", text: "神圣罗马帝国皇帝康拉德二世逝世", link: ""}],
+  "6.5": [{year: "70", text: "罗马帝国军队攻陷耶路撒冷第二圣殿", link: ""},
+          {year: "1967", text: "六日战争爆发", link: "https://baike.baidu.com/item/六日战争"}],
+  "6.6": [{year: "1513", text: "意大利战争：诺瓦拉战役", link: ""},
+          {year: "1944", text: "诺曼底登陆（D-Day）", link: "https://baike.baidu.com/item/诺曼底登陆"}],
+  "6.7": [{year: "1494", text: "托德西利亚斯条约签署，瓜分新世界", link: ""},
+          {year: "1929", text: "梵蒂冈成为独立国家", link: ""}],
+  "6.8": [{year: "452", text: "阿提拉入侵意大利", link: ""},
+          {year: "1966", text: "中国文革爆发", link: ""}],
+  "6.9": [{year: "68", text: "尼禄自杀", link: "https://baike.baidu.com/item/尼禄"},
+          {year: "1815", text: "维也纳会议结束", link: ""}],
+  "6.10": [{year: "1190", text: "第三次十字军：腓特烈·巴巴罗萨溺水身亡", link: ""},
+           {year: "1940", text: "意大利对英法宣战", link: ""}],
+  "6.11": [{year: "1184BC", text: "传说中特洛伊城被攻陷", link: "https://baike.baidu.com/item/特洛伊战争"},
+           {year: "1509", text: "亨利八世与阿拉贡的凯瑟琳结婚", link: ""}],
+  "6.12": [{year: "1381", text: "英格兰农民起义：进军伦敦", link: ""},
+           {year: "1987", text: "罗纳德·里根在柏林墙前发表演说", link: ""}],
+  "6.13": [{year: "313", text: "君士坦丁大帝和利西尼乌斯发布米兰敕令", link: "https://baike.baidu.com/item/米兰敕令"},
+           {year: "1967", text: "美国最高法院裁决洛文诉弗吉尼亚案", link: ""}],
+  "6.14": [{year: "1158", text: "慕尼黑建城", link: ""},
+           {year: "1777", text: "星条旗被采纳为美国国旗", link: ""}],
+  "6.15": [{year: "763BC", text: "亚述人记录日食", link: ""},
+           {year: "1215", text: "约翰王签署《大宪章》", link: "https://baike.baidu.com/item/大宪章"}],
+  "6.16": [{year: "1487", text: "玫瑰战争：斯托克战役", link: ""},
+           {year: "1963", text: "瓦莲京娜·捷列什科娃成为首位进入太空的女性", link: ""}],
+  "6.17": [{year: "1462", text: "弗拉德三世夜袭奥斯曼营地", link: ""},
+           {year: "1972", text: "水门事件", link: "https://baike.baidu.com/item/水门事件"}],
+  "6.18": [{year: "1815", text: "滑铁卢战役，拿破仑最终战败", link: "https://baike.baidu.com/item/滑铁卢战役"},
+           {year: "1983", text: "莎莉·莱德成为首位进入太空的美国女性", link: ""}],
+  "6.19": [{year: "325", text: "尼西亚会议结束", link: ""},
+           {year: "1865", text: "德克萨斯州奴隶获知解放（六月节）", link: ""}],
+  "6.20": [{year: "451", text: "沙隆战役", link: ""}],
+  "6.21": [{year: "217BC", text: "拉菲亚战役", link: ""},
+           {year: "1948", text: "曼彻斯特小计算机首次运行存储程序", link: ""}],
+  "6.22": [{year: "217BC", text: "特拉西梅诺湖战役", link: ""},
+           {year: "1941", text: "巴巴罗萨行动，纳粹德国入侵苏联", link: "https://baike.baidu.com/item/巴巴罗萨行动"}],
+  "6.23": [{year: "1314", text: "班诺克本战役，苏格兰独立", link: ""}],
+  "6.24": [{year: "1947", text: "肯尼斯·阿诺德目击UFO", link: ""}],
+  "6.25": [{year: "1876", text: "小大角战役", link: ""},
+           {year: "1950", text: "朝鲜战争爆发", link: "https://baike.baidu.com/item/朝鲜战争"}],
+  "6.26": [{year: "363", text: "罗马皇帝尤利安在波斯战役中阵亡", link: ""},
+           {year: "1945", text: "联合国宪章签署", link: "https://baike.baidu.com/item/联合国宪章"}],
+  "6.27": [{year: "1350", text: "安德里亚·多里亚出生", link: ""}],
+  "6.28": [{year: "1389", text: "科索沃战役", link: ""},
+           {year: "1914", text: "斐迪南大公遇刺，一战导火索", link: "https://baike.baidu.com/item/萨拉热窝事件"}],
+  "6.29": [{year: "1613", text: "莎士比亚环球剧院被焚毁", link: ""}],
+  "6.30": [{year: "1520", text: "悲痛之夜，科尔特斯被阿兹特克人驱逐", link: ""},
+           {year: "1908", text: "通古斯大爆炸", link: "https://baike.baidu.com/item/通古斯大爆炸"}],
+
+  "7.1": [{year: "552", text: "武陵王萧纪称帝", link: ""},
+          {year: "1997", text: "香港回归中国", link: "https://baike.baidu.com/item/香港回归"}],
+  "7.2": [{year: "626", text: "玄武门之变", link: "https://baike.baidu.com/item/玄武门之变"},
+          {year: "1964", text: "美国总统约翰逊签署民权法案", link: ""}],
+  "7.3": [{year: "987", text: "于格·卡佩加冕为法兰西国王", link: ""},
+          {year: "1938", text: "霍华德·休斯完成首次环球飞行", link: ""}],
+  "7.4": [{year: "362", text: "尤利安成为罗马帝国唯一的统治者", link: ""},
+          {year: "1776", text: "大陆会议通过《独立宣言》", link: "https://baike.baidu.com/item/美国独立宣言"}],
+  "7.5": [{year: "1687", text: "牛顿《自然哲学的数学原理》出版", link: "https://baike.baidu.com/item/自然哲学的数学原理"},
+          {year: "1946", text: "比基尼泳衣首次亮相", link: ""}],
+  "7.6": [{year: "371BC", text: "留克特拉战役", link: ""},
+          {year: "1942", text: "安妮·弗兰克一家躲入密室", link: "https://baike.baidu.com/item/安妮·弗兰克"}],
+  "7.7": [{year: "1937", text: "卢沟桥事变，中国全面抗战爆发", link: "https://baike.baidu.com/item/卢沟桥事变"}],
+  "7.8": [{year: "1099", text: "第一次十字军围攻耶路撒冷", link: ""}],
+  "7.9": [{year: "455", text: "阿维图斯加冕为西罗马皇帝", link: ""}],
+  "7.10": [{year: "48BC", text: "恺撒在法萨卢斯击败庞培", link: ""},
+           {year: "1925", text: "猴子审判", link: ""}],
+  "7.11": [{year: "472", text: "西罗马皇帝安特米乌斯被处决", link: ""},
+           {year: "1405", text: "郑和第一次下西洋", link: "https://baike.baidu.com/item/郑和下西洋"}],
+  "7.12": [{year: "1191", text: "第三次十字军攻占阿克", link: ""}],
+  "7.13": [{year: "1174", text: "威廉一世征服爱尔兰", link: ""},
+           {year: "1985", text: "Live Aid慈善演唱会", link: ""}],
+  "7.14": [{year: "1789", text: "攻占巴士底狱，法国大革命开始", link: "https://baike.baidu.com/item/攻占巴士底狱"},
+           {year: "1965", text: "水手4号飞越火星", link: ""}],
+  "7.15": [{year: "1099", text: "第一次十字军攻占耶路撒冷", link: ""},
+           {year: "2006", text: "Twitter上线", link: "https://baike.baidu.com/item/Twitter"}],
+  "7.16": [{year: "622", text: "希吉拉：穆罕默德从麦加迁徙到麦地那", link: ""},
+           {year: "1945", text: "三位一体核试验，首颗原子弹爆炸", link: "https://baike.baidu.com/item/三位一体核试验"}],
+  "7.17": [{year: "1203", text: "第四次十字军攻占君士坦丁堡", link: ""},
+           {year: "1936", text: "西班牙内战爆发", link: ""}],
+  "7.18": [{year: "64", text: "尼禄首次在公共场合表演", link: ""},
+           {year: "1925", text: "希特勒《我的奋斗》出版", link: ""}],
+  "7.19": [{year: "64", text: "罗马大火", link: ""}],
+  "7.20": [{year: "356BC", text: "亚历山大大帝出生", link: "https://baike.baidu.com/item/亚历山大大帝"},
+           {year: "1969", text: "阿波罗11号登月，阿姆斯特朗踏上月球", link: "https://baike.baidu.com/item/阿波罗11号"}],
+  "7.21": [{year: "356BC", text: "圣殿大火（同一天亚历山大大帝出生）", link: ""}],
+  "7.22": [{year: "1099", text: "戈弗雷被选为圣墓守护者", link: ""}],
+  "7.23": [{year: "811", text: "普利斯卡战役", link: ""},
+           {year: "1995", text: "亚马逊网站上线", link: "https://baike.baidu.com/item/亚马逊公司"}],
+  "7.24": [{year: "1132", text: "巴桑万战役", link: ""},
+           {year: "1911", text: "海勒姆·宾厄姆发现马丘比丘", link: "https://baike.baidu.com/item/马丘比丘"}],
+  "7.25": [{year: "306", text: "君士坦丁大帝被军队拥立为皇帝", link: ""},
+           {year: "1978", text: "世界上首位试管婴儿路易丝·布朗出生", link: ""}],
+  "7.26": [{year: "811", text: "拜占庭皇帝尼基弗鲁斯一世阵亡", link: ""},
+           {year: "1945", text: "波茨坦公告发表", link: "https://baike.baidu.com/item/波茨坦公告"}],
+  "7.27": [{year: "1214", text: "布汶战役", link: ""},
+           {year: "1953", text: "朝鲜战争停战协定签署", link: "https://baike.baidu.com/item/朝鲜停战协定"}],
+  "7.28": [{year: "1540", text: "亨利八世与安妮·克里维斯婚姻被宣布无效", link: ""},
+           {year: "1914", text: "奥匈帝国向塞尔维亚宣战，一战爆发", link: "https://baike.baidu.com/item/第一次世界大战"}],
+  "7.29": [{year: "1014", text: "克莱迪昂战役", link: ""},
+           {year: "1958", text: "NASA成立", link: "https://baike.baidu.com/item/NASA"}],
+  "7.30": [{year: "762", text: "巴格达建城", link: "https://baike.baidu.com/item/巴格达"},
+           {year: "1971", text: "阿波罗15号发射", link: ""}],
+  "7.31": [{year: "904", text: "塞萨洛尼基被萨拉森人洗劫", link: ""}],
+
+  "8.1": [{year: "30BC", text: "埃及艳后克利奥帕特拉七世自杀", link: "https://baike.baidu.com/item/克利奥帕特拉七世"},
+          {year: "1981", text: "MTV首播", link: ""}],
+  "8.2": [{year: "338BC", text: "喀罗尼亚战役", link: ""},
+          {year: "1934", text: "兴登堡逝世，希特勒成为元首", link: ""}],
+  "8.3": [{year: "8", text: "罗马将军提比略征服伊利里亚", link: ""},
+          {year: "1492", text: "哥伦布首次航行出发", link: ""}],
+  "8.4": [{year: "70", text: "提图斯攻陷耶路撒冷上城", link: ""},
+          {year: "1914", text: "德国入侵比利时，英国对德宣战", link: ""}],
+  "8.5": [{year: "25", text: "高句丽灭东扶余", link: ""}],
+  "8.6": [{year: "1284", text: "热那亚击败比萨", link: ""},
+          {year: "1945", text: "广岛原子弹爆炸", link: "https://baike.baidu.com/item/广岛原子弹爆炸"}],
+  "8.7": [{year: "322BC", text: "亚里士多德逝世", link: "https://baike.baidu.com/item/亚里士多德"},
+          {year: "1947", text: "孔蒂基号木筏抵达波利尼西亚", link: ""}],
+  "8.8": [{year: "870", text: "梅尔森条约分割中法兰克王国", link: ""},
+          {year: "1974", text: "尼克松宣布辞职", link: "https://baike.baidu.com/item/理查德·尼克松"}],
+  "8.9": [{year: "48BC", text: "恺撒在法萨卢斯战役中击败庞培", link: ""},
+          {year: "1945", text: "长崎原子弹爆炸", link: "https://baike.baidu.com/item/长崎原子弹爆炸"}],
+  "8.10": [{year: "955", text: "莱希菲尔德战役", link: ""}],
+  "8.11": [{year: "2492BC", text: "传说中哈伊克战胜贝勒斯", link: ""}],
+  "8.12": [{year: "1099", text: "第一次十字军东征结束", link: ""},
+           {year: "1981", text: "IBM发布个人电脑", link: "https://baike.baidu.com/item/IBM个人电脑"}],
+  "8.13": [{year: "3114BC", text: "玛雅历法起始日", link: ""},
+           {year: "1961", text: "柏林墙开始修建", link: "https://baike.baidu.com/item/柏林墙"}],
+  "8.14": [{year: "29BC", text: "奥古斯都举行凯旋式", link: ""},
+           {year: "1947", text: "印度和巴基斯坦分治独立", link: ""}],
+  "8.15": [{year: "778", text: "龙塞斯瓦列斯战役", link: ""},
+           {year: "1945", text: "日本宣布无条件投降（V-J Day）", link: "https://baike.baidu.com/item/日本无条件投降"}],
+  "8.16": [{year: "1896", text: "克朗代克淘金热开始", link: ""},
+           {year: "1977", text: "猫王埃尔维斯·普雷斯利逝世", link: ""}],
+  "8.17": [{year: "986", text: "拜占庭军队在特拉扬之门战役被击败", link: ""},
+           {year: "1807", text: "罗伯特·富尔顿的蒸汽船克莱蒙特号首航", link: ""}],
+  "8.18": [{year: "293", text: "马克西米安成为西罗马皇帝", link: ""},
+           {year: "1920", text: "美国宪法第十九修正案（女性投票权）生效", link: ""}],
+  "8.19": [{year: "43BC", text: "奥古斯都·屋大维在罗马首次执政", link: ""},
+           {year: "1991", text: "苏联八一九事件", link: "https://baike.baidu.com/item/八一九事件"}],
+  "8.20": [{year: "636", text: "雅穆克战役，阿拉伯人征服叙利亚", link: ""},
+           {year: "1977", text: "旅行者2号发射", link: "https://baike.baidu.com/item/旅行者2号"}],
+  "8.21": [{year: "1680", text: "普韦布洛起义", link: ""},
+           {year: "1959", text: "夏威夷成为美国第50个州", link: ""}],
+  "8.22": [{year: "392", text: "阿波加斯特拥立尤金尼乌斯为西罗马皇帝", link: ""},
+           {year: "1642", text: "英国内战爆发", link: ""}],
+  "8.23": [{year: "1305", text: "威廉·华莱士被处决", link: "https://baike.baidu.com/item/威廉·华莱士"},
+           {year: "1939", text: "莫洛托夫-里宾特洛甫条约签署", link: ""}],
+  "8.24": [{year: "410", text: "西哥特人洗劫罗马", link: ""},
+           {year: "2006", text: "冥王星被降级为矮行星", link: "https://baike.baidu.com/item/矮行星"}],
+  "8.25": [{year: "1530", text: "伊万四世（恐怖的伊万）出生", link: ""}],
+  "8.26": [{year: "1071", text: "曼齐克特战役，塞尔柱人击败拜占庭", link: ""},
+           {year: "1883", text: "喀拉喀托火山爆发", link: "https://baike.baidu.com/item/喀拉喀托火山"}],
+  "8.27": [{year: "1859", text: "世界首口商业油井在美国宾州开钻", link: ""}],
+  "8.28": [{year: "489", text: "奥多亚塞被狄奥多里克击败", link: ""},
+           {year: "1963", text: "马丁·路德·金发表《我有一个梦想》演讲", link: ""}],
+  "8.29": [{year: "708", text: "铜币首次在日本铸造", link: ""},
+           {year: "1831", text: "法拉第发现电磁感应", link: "https://baike.baidu.com/item/迈克尔·法拉第"}],
+  "8.30": [{year: "1363", text: "鄱阳湖之战", link: ""}],
+  "8.31": [{year: "1056", text: "拜占庭皇帝狄奥多拉逝世", link: ""},
+           {year: "1997", text: "戴安娜王妃因车祸逝世", link: "https://baike.baidu.com/item/戴安娜王妃"}],
+
+  "9.1": [{year: "1939", text: "德国入侵波兰，第二次世界大战爆发", link: "https://baike.baidu.com/item/第二次世界大战"},
+          {year: "1983", text: "大韩航空007号班机被击落", link: ""}],
+  "9.2": [{year: "44BC", text: "西塞罗发表首篇反腓力辞", link: ""},
+          {year: "1945", text: "日本正式签署投降书，二战结束", link: "https://baike.baidu.com/item/日本投降"}],
+  "9.3": [{year: "301", text: "圣马力诺建国", link: ""},
+          {year: "1939", text: "英法对德宣战", link: ""}],
+  "9.4": [{year: "476", text: "奥多亚塞废黜罗慕路斯·奥古斯都，西罗马帝国灭亡", link: "https://baike.baidu.com/item/西罗马帝国"},
+          {year: "1957", text: "美国小石城事件", link: ""}],
+  "9.5": [{year: "1666", text: "伦敦大火第三天", link: ""},
+          {year: "1977", text: "旅行者1号发射", link: "https://baike.baidu.com/item/旅行者1号"}],
+  "9.6": [{year: "1522", text: "麦哲伦船队完成首次环球航行返回西班牙", link: ""}],
+  "9.7": [{year: "1191", text: "第三次十字军：阿苏夫战役", link: ""},
+          {year: "1940", text: "伦敦大轰炸开始", link: ""}],
+  "9.8": [{year: "1100", text: "戈弗雷·比尔泰于耶路撒冷去世", link: ""}],
+  "9.9": [{year: "9", text: "罗马帝国皇帝提比略逝世", link: ""},
+          {year: "1948", text: "朝鲜民主主义人民共和国成立", link: ""}],
+  "9.10": [{year: "506", text: "阿莱之战", link: ""},
+           {year: "2008", text: "大型强子对撞机（LHC）启动", link: "https://baike.baidu.com/item/大型强子对撞机"}],
+  "9.11": [{year: "1297", text: "斯特林桥战役", link: ""},
+           {year: "2001", text: "9·11恐怖袭击", link: "https://baike.baidu.com/item/9·11事件"}],
+  "9.12": [{year: "490BC", text: "马拉松战役", link: "https://baike.baidu.com/item/马拉松战役"},
+           {year: "1940", text: "拉斯科洞穴壁画被发现", link: ""}],
+  "9.13": [{year: "122", text: "哈德良长城动工", link: ""},
+           {year: "1985", text: "超级马里奥兄弟发售", link: "https://baike.baidu.com/item/超级马里奥兄弟"}],
+  "9.14": [{year: "786", text: "哈伦·拉希德成为阿拔斯王朝哈里发", link: ""}],
+  "9.15": [{year: "668", text: "君士坦斯二世被刺杀", link: ""}],
+  "9.16": [{year: "1620", text: "五月花号启航", link: ""}],
+  "9.17": [{year: "1176", text: "密列奥塞法隆战役", link: ""},
+           {year: "1862", text: "安提塔姆战役", link: ""}],
+  "9.18": [{year: "96", text: "图密善被刺杀，涅尔瓦继位，五贤帝时代开始", link: ""},
+           {year: "1931", text: "九一八事变", link: "https://baike.baidu.com/item/九一八事变"}],
+  "9.19": [{year: "1356", text: "普瓦捷战役", link: ""}],
+  "9.20": [{year: "1519", text: "麦哲伦船队从西班牙出发开始环球航行", link: ""}],
+  "9.21": [{year: "1170", text: "托马斯·贝克特在坎特伯雷大教堂被谋杀", link: ""}],
+  "9.22": [{year: "66", text: "第一次犹太-罗马战争开始", link: ""},
+           {year: "1980", text: "两伊战争爆发", link: ""}],
+  "9.23": [{year: "1122", text: "沃尔姆斯宗教协定签署", link: ""},
+           {year: "1846", text: "海王星被发现", link: "https://baike.baidu.com/item/海王星"}],
+  "9.24": [{year: "622", text: "先知穆罕默德抵达麦地那（希吉拉）", link: ""},
+           {year: "1948", text: "本田技研工业株式会社成立", link: "https://baike.baidu.com/item/本田"}],
+  "9.25": [{year: "1066", text: "斯坦福桥战役", link: ""}],
+  "9.26": [{year: "1087", text: "征服者威廉去世", link: ""}],
+  "9.27": [{year: "1066", text: "征服者威廉从诺曼底出发入侵英格兰", link: ""}],
+  "9.28": [{year: "48BC", text: "庞培被埃及人刺杀", link: ""},
+           {year: "1928", text: "亚历山大·弗莱明发现青霉素", link: "https://baike.baidu.com/item/亚历山大·弗莱明"}],
+  "9.29": [{year: "522BC", text: "大流士一世在贝希斯敦战役中获胜", link: ""}],
+  "9.30": [{year: "489", text: "奥多亚塞在拉文纳向狄奥多里克投降", link: ""}],
+
+  "10.1": [{year: "331BC", text: "亚历山大大帝在高加米拉击败大流士三世", link: ""},
+           {year: "1949", text: "中华人民共和国成立", link: "https://baike.baidu.com/item/中华人民共和国成立"}],
+  "10.2": [{year: "1187", text: "萨拉丁收复耶路撒冷", link: "https://baike.baidu.com/item/萨拉丁"},
+           {year: "1958", text: "几内亚独立", link: ""}],
+  "10.3": [{year: "52BC", text: "阿莱西亚战役，恺撒击败维钦托利", link: ""},
+           {year: "1990", text: "两德统一", link: "https://baike.baidu.com/item/两德统一"}],
+  "10.4": [{year: "23", text: "东汉绿林军攻入长安，王莽被杀", link: ""},
+           {year: "1957", text: "苏联发射斯普特尼克1号，首颗人造卫星", link: "https://baike.baidu.com/item/斯普特尼克1号"}],
+  "10.5": [{year: "1582", text: "教宗格里高利十三世推行格里历（公历）", link: "https://baike.baidu.com/item/格里历"},
+           {year: "1962", text: "《007之诺博士》首映", link: ""}],
+  "10.6": [{year: "105BC", text: "阿里亚战役", link: ""},
+           {year: "1973", text: "赎罪日战争爆发", link: ""}],
+  "10.7": [{year: "3761BC", text: "希伯来历起始日", link: ""}],
+  "10.8": [{year: "1075", text: "丹麦克努特大帝逝世", link: ""},
+           {year: "1871", text: "芝加哥大火", link: ""}],
+  "10.9": [{year: "1000", text: "莱夫·埃里克松抵达北美", link: ""}],
+  "10.10": [{year: "680", text: "卡尔巴拉战役", link: ""},
+            {year: "1911", text: "辛亥革命爆发", link: "https://baike.baidu.com/item/辛亥革命"}],
+  "10.11": [{year: "1138", text: "阿勒颇地震", link: ""}],
+  "10.12": [{year: "1492", text: "哥伦布到达美洲巴哈马群岛", link: "https://baike.baidu.com/item/克里斯托弗·哥伦布"},
+            {year: "1964", text: "苏联三位宇航员进入太空", link: ""}],
+  "10.13": [{year: "1307", text: "腓力四世下令逮捕圣殿骑士团", link: ""}],
+  "10.14": [{year: "1066", text: "黑斯廷斯战役", link: "https://baike.baidu.com/item/黑斯廷斯战役"},
+            {year: "1947", text: "查克·叶格突破音障", link: ""}],
+  "10.15": [{year: "1582", text: "格里历正式启用（意大利/西班牙/葡萄牙）", link: ""}],
+  "10.16": [{year: "690", text: "武则天称帝，建立武周", link: "https://baike.baidu.com/item/武则天"},
+            {year: "1964", text: "中国第一颗原子弹爆炸成功", link: "https://baike.baidu.com/item/中国第一颗原子弹爆炸成功"}],
+  "10.17": [{year: "1346", text: "内维尔十字之战", link: ""}],
+  "10.18": [{year: "1009", text: "圣墓教堂被哈基姆毁坏", link: ""}],
+  "10.19": [{year: "202BC", text: "扎马战役，西庇阿击败汉尼拔", link: ""},
+            {year: "1987", text: "黑色星期一，全球股灾", link: ""}],
+  "10.20": [{year: "1805", text: "特拉法尔加海战，纳尔逊阵亡", link: ""}],
+  "10.21": [{year: "1096", text: "平民十字军覆灭", link: ""},
+            {year: "1805", text: "纳尔逊在特拉法尔加阵亡", link: ""}],
+  "10.22": [{year: "794", text: "平安京正式成为日本首都", link: ""},
+            {year: "1962", text: "古巴导弹危机开始", link: "https://baike.baidu.com/item/古巴导弹危机"}],
+  "10.23": [{year: "42BC", text: "腓立比战役", link: ""},
+            {year: "1989", text: "匈牙利宣布成为共和国", link: ""}],
+  "10.24": [{year: "1260", text: "忽必烈成为蒙古大汗", link: ""},
+            {year: "1945", text: "联合国正式成立", link: "https://baike.baidu.com/item/联合国"}],
+  "10.25": [{year: "1415", text: "阿金库尔战役", link: ""},
+            {year: "1854", text: "巴拉克拉瓦战役（轻骑兵冲锋）", link: ""}],
+  "10.26": [{year: "740", text: "君士坦丁堡地震", link: ""}],
+  "10.27": [{year: "312", text: "君士坦丁大帝在米尔维安大桥击败马克森提乌斯", link: ""}],
+  "10.28": [{year: "306", text: "马克森提乌斯在罗马加冕", link: ""},
+            {year: "1962", text: "赫鲁晓夫同意撤走导弹，古巴导弹危机结束", link: ""}],
+  "10.29": [{year: "1618", text: "沃尔特·雷利被处决", link: ""},
+            {year: "1929", text: "黑色星期二，华尔街股灾", link: "https://baike.baidu.com/item/黑色星期二"}],
+  "10.30": [{year: "1270", text: "第八次十字军东征结束，路易九世逝世", link: ""}],
+  "10.31": [{year: "1517", text: "马丁·路德张贴《九十五条论纲》，宗教改革开始", link: "https://baike.baidu.com/item/九十五条论纲"},
+            {year: "1984", text: "英迪拉·甘地遇刺", link: ""}],
+
+  "11.1": [{year: "996", text: "教宗格里高利五世加冕", link: ""},
+           {year: "1950", text: "教皇庇护十二世定义圣母升天为教义", link: ""}],
+  "11.2": [{year: "619", text: "唐高祖李渊设伏诛杀李密", link: ""}],
+  "11.3": [{year: "1534", text: "英格兰国会通过《至尊法案》，亨利八世成为英国国教最高领袖", link: ""},
+           {year: "1957", text: "斯普特尼克2号携带小狗莱卡进入太空", link: ""}],
+  "11.4": [{year: "1429", text: "圣女贞德解救奥尔良", link: ""},
+           {year: "2008", text: "巴拉克·奥巴马当选美国总统", link: "https://baike.baidu.com/item/巴拉克·奥巴马"}],
+  "11.5": [{year: "1138", text: "里昂宗教会议", link: ""},
+           {year: "1605", text: "火药阴谋：盖伊·福克斯被捕", link: ""}],
+  "11.6": [{year: "355", text: "尤利安被提升为凯撒", link: ""},
+           {year: "1860", text: "亚伯拉罕·林肯当选美国总统", link: ""}],
+  "11.7": [{year: "680", text: "第三次君士坦丁堡大公会议", link: ""},
+           {year: "1917", text: "俄国十月革命", link: "https://baike.baidu.com/item/十月革命"}],
+  "11.8": [{year: "960", text: "赵匡胤发动陈桥兵变建立宋朝", link: ""},
+           {year: "1923", text: "啤酒馆政变", link: ""}],
+  "11.9": [{year: "1494", text: "皮耶罗二世投降，法国进入佛罗伦萨", link: ""},
+           {year: "1989", text: "柏林墙倒塌", link: "https://baike.baidu.com/item/柏林墙倒塌"}],
+  "11.10": [{year: "1444", text: "瓦尔纳战役", link: ""}],
+  "11.11": [{year: "308", text: "教宗马尔塞林逝世", link: ""},
+            {year: "1918", text: "第一次世界大战停战", link: "https://baike.baidu.com/item/康边停战协定"}],
+  "11.12": [{year: "764", text: "唐朝宦官鱼朝恩被赐死", link: ""}],
+  "11.13": [{year: "1002", text: "圣布莱斯日大屠杀", link: ""}],
+  "11.14": [{year: "1533", text: "弗朗西斯科·皮萨罗征服印加帝国", link: ""},
+            {year: "1971", text: "水手9号成为首颗环绕火星的探测器", link: ""}],
+  "11.15": [{year: "655", text: "奥斯威大主教会议", link: ""}],
+  "11.16": [{year: "1532", text: "皮萨罗俘虏印加皇帝阿塔瓦尔帕", link: ""}],
+  "11.17": [{year: "1558", text: "伊丽莎白一世继位，伊丽莎白时代开始", link: ""},
+            {year: "1970", text: "苏联月球车1号着陆", link: ""}],
+  "11.18": [{year: "1307", text: "传说中威廉·泰尔射中儿子头上的苹果", link: ""}],
+  "11.19": [{year: "461", text: "圣帕特里克逝世", link: ""},
+            {year: "1863", text: "林肯发表葛底斯堡演说", link: "https://baike.baidu.com/item/葛底斯堡演说"}],
+  "11.20": [{year: "284", text: "戴克里先被军队拥立为罗马皇帝", link: ""},
+            {year: "1945", text: "纽伦堡审判开庭", link: "https://baike.baidu.com/item/纽伦堡审判"}],
+  "11.21": [{year: "1386", text: "蒂宾根大学成立", link: ""}],
+  "11.22": [{year: "1220", text: "腓特烈二世加冕为神圣罗马帝国皇帝", link: ""},
+            {year: "1963", text: "约翰·F·肯尼迪遇刺", link: "https://baike.baidu.com/item/约翰·肯尼迪"}],
+  "11.23": [{year: "534", text: "查士丁尼法典首次颁布", link: ""}],
+  "11.24": [{year: "380", text: "狄奥多西一世进入君士坦丁堡", link: ""},
+            {year: "1859", text: "达尔文《物种起源》出版", link: "https://baike.baidu.com/item/物种起源"}],
+  "11.25": [{year: "1034", text: "马尔科姆二世逝世", link: ""}],
+  "11.26": [{year: "1161", text: "采石矶之战", link: ""}],
+  "11.27": [{year: "1095", text: "乌尔班二世在克莱蒙会议呼吁十字军", link: ""}],
+  "11.28": [{year: "587", text: "伦巴第人征服米兰", link: ""},
+            {year: "1943", text: "德黑兰会议开幕", link: ""}],
+  "11.29": [{year: "1268", text: "教皇克莱门特四世逝世", link: ""}],
+  "11.30": [{year: "1016", text: "丹麦国王克努特大帝征服英格兰", link: ""},
+            {year: "1939", text: "苏芬战争爆发", link: ""}],
+
+  "12.1": [{year: "800", text: "查理大帝被加冕为神圣罗马帝国皇帝", link: ""},
+           {year: "1955", text: "罗莎·帕克斯拒绝让座，蒙哥马利巴士抵制运动开始", link: ""}],
+  "12.2": [{year: "1804", text: "拿破仑在巴黎圣母院加冕为皇帝", link: ""},
+           {year: "1942", text: "费米在芝加哥大学启动首个人工核反应堆", link: ""}],
+  "12.3": [{year: "915", text: "教宗约翰十世加冕贝伦加尔一世", link: ""}],
+  "12.4": [{year: "771", text: "查理曼成为法兰克唯一的国王", link: ""}],
+  "12.5": [{year: "63BC", text: "西塞罗在元老院揭露喀提林阴谋", link: ""},
+           {year: "1933", text: "美国禁酒令废除", link: ""}],
+  "12.6": [{year: "1240", text: "蒙古拔都攻陷基辅", link: ""},
+           {year: "1917", text: "芬兰宣布独立", link: ""}],
+  "12.7": [{year: "43BC", text: "西塞罗被处决", link: ""},
+           {year: "1941", text: "珍珠港事件，日本偷袭珍珠港", link: "https://baike.baidu.com/item/珍珠港事件"}],
+  "12.8": [{year: "395", text: "东罗马帝国皇帝阿卡狄乌斯即位", link: ""},
+           {year: "1980", text: "约翰·列侬被刺杀", link: "https://baike.baidu.com/item/约翰·列侬"}],
+  "12.9": [{year: "536", text: "东哥特人收复罗马", link: ""}],
+  "12.10": [{year: "1041", text: "拜占庭皇帝米哈伊尔四世逝世", link: ""},
+            {year: "1901", text: "首届诺贝尔奖颁奖", link: "https://baike.baidu.com/item/诺贝尔奖"}],
+  "12.11": [{year: "220", text: "汉献帝禅位，东汉灭亡", link: ""},
+            {year: "1936", text: "爱德华八世退位", link: ""}],
+  "12.12": [{year: "627", text: "尼尼微战役", link: ""},
+            {year: "1911", text: "阿蒙森抵达南极", link: ""}],
+  "12.13": [{year: "1294", text: "教宗塞莱斯廷五世退位", link: ""},
+            {year: "1937", text: "南京大屠杀开始", link: "https://baike.baidu.com/item/南京大屠杀"}],
+  "12.14": [{year: "1287", text: "圣卢西亚洪水", link: ""},
+            {year: "1962", text: "水手2号飞越金星", link: ""}],
+  "12.15": [{year: "687", text: "教宗塞尔吉乌斯一世当选", link: ""}],
+  "12.16": [{year: "1431", text: "亨利六世在巴黎加冕为法国国王", link: ""},
+            {year: "1944", text: "突出部战役（阿登反击战）", link: ""}],
+  "12.17": [{year: "497BC", text: "罗马举行首次平民会议", link: ""},
+            {year: "1903", text: "莱特兄弟首次动力飞行", link: "https://baike.baidu.com/item/莱特兄弟"}],
+  "12.18": [{year: "1271", text: "忽必烈定国号为元", link: "https://baike.baidu.com/item/元朝"},
+            {year: "1966", text: "联合国儿童基金会成立", link: ""}],
+  "12.19": [{year: "324", text: "君士坦丁大帝将拜占庭重建为君士坦丁堡", link: ""}],
+  "12.20": [{year: "69", text: "维特里乌斯被处决，韦斯巴芗进入罗马", link: ""},
+            {year: "1999", text: "澳门回归中国", link: "https://baike.baidu.com/item/澳门回归"}],
+  "12.21": [{year: "69", text: "韦斯巴芗正式成为罗马皇帝", link: ""},
+            {year: "1968", text: "阿波罗8号发射，首次载人绕月飞行", link: ""}],
+  "12.22": [{year: "401", text: "教宗英诺森一世当选", link: ""},
+            {year: "1989", text: "尼古拉·齐奥塞斯库政权被推翻", link: ""}],
+  "12.23": [{year: "962", text: "拜占庭收复克里特", link: ""},
+            {year: "1947", text: "晶体管发明", link: "https://baike.baidu.com/item/晶体管"}],
+  "12.24": [{year: "640", text: "教宗约翰四世当选", link: ""}],
+  "12.25": [{year: "1", text: "传说中耶稣基督诞生", link: "https://baike.baidu.com/item/耶稣"},
+            {year: "1066", text: "征服者威廉在威斯敏斯特加冕为英格兰国王", link: ""}],
+  "12.26": [{year: "887", text: "卡洛林王朝被推翻", link: ""},
+            {year: "2004", text: "印度洋大地震及海啸", link: "https://baike.baidu.com/item/印度洋大地震"}],
+  "12.27": [{year: "537", text: "圣索菲亚大教堂落成", link: ""}],
+  "12.28": [{year: "484", text: "阿兰里克二世成为西哥特国王", link: ""},
+            {year: "1895", text: "卢米埃尔兄弟首次公开放映电影", link: "https://baike.baidu.com/item/卢米埃尔兄弟"}],
+  "12.29": [{year: "1170", text: "托马斯·贝克特被谋杀", link: ""}],
+  "12.30": [{year: "1460", text: "韦克菲尔德战役", link: ""},
+            {year: "1922", text: "苏联成立", link: "https://baike.baidu.com/item/苏联"}],
+  "12.31": [{year: "406", text: "汪达尔人越过莱茵河", link: ""},
+            {year: "1999", text: "鲍里斯·叶利钦辞去俄罗斯总统职务", link: ""}],
+};
+
+/* ---------- 学科精选事件库（按主题，节点日为主） ---------- */
+const THEME_DATABASES = {
+  world: HIST_EVENTS_DB,
+
+  science: {
+    "1.4":  [{year: "1643", text: "艾萨克·牛顿出生", link: "https://baike.baidu.com/item/艾萨克·牛顿"}],
+    "1.14": [{year: "1742", text: "爱德蒙·哈雷逝世", link: "https://baike.baidu.com/item/爱德蒙·哈雷"}],
+    "2.19": [{year: "1878", text: "爱迪生获得留声机专利", link: "https://baike.baidu.com/item/留声机"}],
+    "3.14": [{year: "1879", text: "阿尔伯特·爱因斯坦出生", link: "https://baike.baidu.com/item/阿尔伯特·爱因斯坦"}],
+    "3.28": [{year: "1932", text: "詹姆斯·查德威克发现中子", link: ""}],
+    "5.5":  [{year: "1818", text: "卡尔·马克思出生", link: "https://baike.baidu.com/item/卡尔·马克思"}],
+    "5.11": [{year: "1904", text: "萨尔瓦多·达利出生", link: ""}],
+    "6.5":  [{year: "1723", text: "亚当·斯密出生", link: ""}],
+    "6.13": [{year: "1831", text: "詹姆斯·麦克斯韦出生", link: "https://baike.baidu.com/item/詹姆斯·麦克斯韦"}],
+    "6.16": [{year: "1911", text: "IBM前身CTR公司成立", link: ""}],
+    "7.5":  [{year: "1687", text: "牛顿《自然哲学的数学原理》出版", link: "https://baike.baidu.com/item/自然哲学的数学原理"}],
+    "7.16": [{year: "1945", text: "三位一体核试验，首颗原子弹爆炸", link: "https://baike.baidu.com/item/三位一体核试验"}],
+    "8.8":  [{year: "1902", text: "保罗·狄拉克出生", link: ""}],
+    "8.12": [{year: "1887", text: "埃尔温·薛定谔出生", link: ""}],
+    "8.29": [{year: "1831", text: "法拉第发现电磁感应", link: "https://baike.baidu.com/item/迈克尔·法拉第"}],
+    "9.28": [{year: "1928", text: "亚历山大·弗莱明发现青霉素", link: "https://baike.baidu.com/item/亚历山大·弗莱明"}],
+    "10.4": [{year: "1957", text: "斯普特尼克1号发射", link: "https://baike.baidu.com/item/斯普特尼克1号"}],
+    "10.16":[{year: "1964", text: "中国第一颗原子弹爆炸成功", link: "https://baike.baidu.com/item/中国第一颗原子弹爆炸成功"}],
+    "11.7": [{year: "1867", text: "玛丽·居里出生", link: "https://baike.baidu.com/item/玛丽·居里"}],
+    "11.24":[{year: "1859", text: "达尔文《物种起源》出版", link: "https://baike.baidu.com/item/物种起源"}],
+    "12.10":[{year: "1901", text: "首届诺贝尔奖颁奖", link: "https://baike.baidu.com/item/诺贝尔奖"}],
+    "12.17":[{year: "1903", text: "莱特兄弟首次动力飞行", link: "https://baike.baidu.com/item/莱特兄弟"}],
+    "12.23":[{year: "1947", text: "晶体管发明", link: "https://baike.baidu.com/item/晶体管"}],
+  },
+
+  astronomy: {
+    "1.7":  [{year: "1610", text: "伽利略发现木星四大卫星", link: "https://baike.baidu.com/item/伽利略卫星"}],
+    "1.24": [{year: "1986", text: "旅行者2号飞越天王星", link: ""}],
+    "3.13": [{year: "1781", text: "威廉·赫歇尔发现天王星", link: ""}],
+    "3.20": [{year: "每年", text: "春分（太阳黄经0°）", link: ""}],
+    "4.10": [{year: "837", text: "哈雷彗星到达近日点", link: "https://baike.baidu.com/item/哈雷彗星"}],
+    "4.24": [{year: "1990", text: "哈勃太空望远镜发射", link: "https://baike.baidu.com/item/哈勃太空望远镜"}],
+    "5.25": [{year: "240BC", text: "中国史书记载最早的哈雷彗星观测", link: ""}],
+    "6.21": [{year: "每年", text: "夏至（太阳黄经90°）", link: ""}],
+    "6.30": [{year: "1908", text: "通古斯大爆炸", link: "https://baike.baidu.com/item/通古斯大爆炸"}],
+    "7.20": [{year: "1969", text: "阿波罗11号登月", link: "https://baike.baidu.com/item/阿波罗11号"}],
+    "7.24": [{year: "1911", text: "海勒姆·宾厄姆发现马丘比丘", link: "https://baike.baidu.com/item/马丘比丘"}],
+    "8.6":  [{year: "1945", text: "广岛原子弹爆炸", link: "https://baike.baidu.com/item/广岛原子弹爆炸"}],
+    "8.26": [{year: "1883", text: "喀拉喀托火山爆发", link: "https://baike.baidu.com/item/喀拉喀托火山"}],
+    "9.23": [{year: "1846", text: "海王星被发现", link: "https://baike.baidu.com/item/海王星"}],
+    "9.30": [{year: "1889", text: "黑洞一词由米歇尔提出", link: ""}],
+    "10.4": [{year: "1957", text: "斯普特尼克1号发射", link: "https://baike.baidu.com/item/斯普特尼克1号"}],
+    "10.29":[{year: "1998", text: "首颗太空探测器发现系外行星", link: ""}],
+    "11.14":[{year: "1971", text: "水手9号成为首颗环绕火星的探测器", link: ""}],
+    "12.14":[{year: "1962", text: "水手2号飞越金星", link: ""}],
+    "12.21":[{year: "1968", text: "阿波罗8号发射，首次载人绕月飞行", link: ""}],
+  },
+
+  computer: {
+    "1.24": [{year: "1984", text: "苹果Macintosh发布", link: "https://baike.baidu.com/item/Macintosh"}],
+    "2.14": [{year: "1946", text: "ENIAC正式公开", link: ""}],
+    "3.3":  [{year: "1983", text: "C++正式命名", link: ""}],
+    "3.14": [{year: "1989", text: "万维网提案提交", link: ""}],
+    "4.1":  [{year: "1976", text: "苹果公司成立", link: "https://baike.baidu.com/item/苹果公司"}],
+    "4.4":  [{year: "1975", text: "微软成立", link: ""}],
+    "4.7":  [{year: "1969", text: "首条RFC文档发布", link: ""}],
+    "6.5":  [{year: "1998", text: "Google公司成立", link: "https://baike.baidu.com/item/Google"}],
+    "6.15": [{year: "1996", text: "NSFNET退役，商业互联网全面接管", link: ""}],
+    "6.29": [{year: "2007", text: "苹果iPhone在英国和德国发售", link: ""}],
+    "7.15": [{year: "2006", text: "Twitter上线", link: "https://baike.baidu.com/item/Twitter"}],
+    "7.23": [{year: "1995", text: "亚马逊网站上线", link: "https://baike.baidu.com/item/亚马逊公司"}],
+    "8.6":  [{year: "1991", text: "万维网向公众开放", link: ""}],
+    "8.9":  [{year: "1995", text: "网景IPO，互联网泡沫开始", link: ""}],
+    "8.12": [{year: "1981", text: "IBM发布个人电脑", link: "https://baike.baidu.com/item/IBM个人电脑"}],
+    "9.13": [{year: "1985", text: "超级马里奥兄弟发售", link: "https://baike.baidu.com/item/超级马里奥兄弟"}],
+    "9.26": [{year: "1990", text: "首届世界互联网大会", link: ""}],
+    "10.20":[{year: "2009", text: "Windows 7发布", link: ""}],
+    "10.28":[{year: "1955", text: "比尔·盖茨出生", link: ""}],
+    "11.10":[{year: "1983", text: "微软宣布Windows", link: ""}],
+    "12.3":  [{year: "1969", text: "ARPANET首次节点连接测试", link: ""}],
+    "12.10":[{year: "1993", text: "Mosaic浏览器发布", link: ""}],
+  },
+
+  art: {
+    "1.29": [{year: "1737", text: "乔治·弗里德里希·亨德尔逝世", link: ""}],
+    "2.14": [{year: "1876", text: "梵高开始创作《吃土豆的人》", link: ""}],
+    "3.30": [{year: "1853", text: "梵高出生", link: ""}],
+    "4.15": [{year: "1452", text: "达·芬奇出生", link: "https://baike.baidu.com/item/列奥纳多·达·芬奇"}],
+    "5.8":  [{year: "1884", text: "毕加索《第一次圣餐》", link: ""}],
+    "7.10": [{year: "1878", text: "莫奈《印象·日出》首次展出", link: ""}],
+    "7.14": [{year: "1789", text: "攻占巴士底狱（德拉克洛瓦名画题材）", link: "https://baike.baidu.com/item/攻占巴士底狱"}],
+    "7.25": [{year: "1847", text: "爱德华·霍普出生", link: ""}],
+    "8.19": [{year: "1839", text: "达盖尔摄影法公布（摄影诞生）", link: ""}],
+    "9.21": [{year: "1866", text: "H.G.威尔斯出生", link: ""}],
+    "10.16":[{year: "1854", text: "奥斯卡·王尔德出生", link: ""}],
+    "10.25":[{year: "1881", text: "毕加索出生", link: ""}],
+    "11.18":[{year: "1928", text: "米老鼠首映《威利号汽船》", link: ""}],
+    "12.16":[{year: "1770", text: "贝多芬出生", link: ""}],
+    "12.25":[{year: "1878", text: "柴可夫斯基《弦乐小夜曲》首演", link: ""}],
+  },
+
+  literature: {
+    "1.3":  [{year: "1924", text: "约瑟夫·康拉德逝世", link: ""}],
+    "1.11": [{year: "1928", text: "托马斯·哈代逝世", link: ""}],
+    "2.2":  [{year: "1882", text: "詹姆斯·乔伊斯出生", link: ""}],
+    "2.7":  [{year: "1812", text: "查尔斯·狄更斯出生", link: ""}],
+    "3.15": [{year: "44BC", text: "恺撒被刺杀（莎士比亚名剧题材）", link: "https://baike.baidu.com/item/恺撒被刺杀"}],
+    "3.26": [{year: "1920", text: "田纳西·威廉斯出生", link: ""}],
+    "4.23": [{year: "1616", text: "莎士比亚和塞万提斯同日逝世", link: "https://baike.baidu.com/item/威廉·莎士比亚"}],
+    "5.25": [{year: "1803", text: "拉尔夫·沃尔多·爱默生出生", link: ""}],
+    "6.28": [{year: "1491", text: "亨利八世出生", link: ""}],
+    "7.2":  [{year: "1900", text: "托尔金与伊迪丝订婚", link: ""}],
+    "7.18": [{year: "1817", text: "简·奥斯汀逝世", link: ""}],
+    "8.30": [{year: "1797", text: "玛丽·雪莱出生（《弗兰肯斯坦》作者）", link: ""}],
+    "9.9":  [{year: "1828", text: "列夫·托尔斯泰出生", link: ""}],
+    "10.15":[{year: "1844", text: "尼采出生", link: ""}],
+    "11.14":[{year: "1840", text: "克劳德·莫奈出生", link: ""}],
+    "11.28":[{year: "1820", text: "弗里德里希·恩格斯出生", link: ""}],
+    "12.4":  [{year: "1875", text: "拉迪亚德·吉卜林出生", link: ""}],
+    "12.12":[{year: "1821", text: "居斯塔夫·福楼拜出生", link: ""}],
+    "12.22":[{year: "1887", text: "斯里·奥罗宾多出生", link: ""}],
+  },
+
+  music: {
+    "1.27": [{year: "1756", text: "莫扎特出生", link: "https://baike.baidu.com/item/沃尔夫冈·阿玛多伊斯·莫扎特"}],
+    "1.31": [{year: "1797", text: "舒伯特出生", link: ""}],
+    "2.22": [{year: "1810", text: "肖邦出生", link: ""}],
+    "3.21": [{year: "1685", text: "巴赫出生", link: ""}],
+    "3.26": [{year: "1827", text: "贝多芬逝世", link: ""}],
+    "4.3":  [{year: "1678", text: "维瓦尔第出生", link: ""}],
+    "5.7":  [{year: "1833", text: "勃拉姆斯出生", link: ""}],
+    "6.17": [{year: "1882", text: "伊戈尔·斯特拉文斯基出生", link: ""}],
+    "6.22":[{year: "1910", text: "李斯特逝世", link: ""}],
+    "7.6":  [{year: "1957", text: "约翰·列侬遇见保罗·麦卡特尼", link: ""}],
+    "7.7":  [{year: "1940", text: "Ringo Starr出生", link: ""}],
+    "8.16": [{year: "1958", text: "麦当娜出生", link: ""}],
+    "8.29": [{year: "1958", text: "迈克尔·杰克逊出生", link: ""}],
+    "10.9": [{year: "1940", text: "约翰·列侬出生", link: ""}],
+    "10.22":[{year: "1811", text: "李斯特·费伦茨出生", link: ""}],
+    "12.5": [{year: "1901", text: "沃尔特·迪士尼出生", link: ""}],
+    "12.8": [{year: "1980", text: "约翰·列侬被刺杀", link: "https://baike.baidu.com/item/约翰·列侬"}],
+    "12.17":[{year: "1937", text: "Art Neville出生", link: ""}],
+    "12.22":[{year: "1808", text: "贝多芬《第五交响曲》首演", link: ""}],
+  },
+
+  medicine: {
+    "1.23": [{year: "1899", text: "阿司匹林在德国获批上市", link: ""}],
+    "2.28": [{year: "1953", text: "DNA双螺旋结构发现", link: "https://baike.baidu.com/item/DNA双螺旋结构"}],
+    "3.3":  [{year: "1847", text: "塞麦尔维斯提倡医生洗手", link: ""}],
+    "3.22": [{year: "1882", text: "科赫发现结核杆菌", link: ""}],
+    "4.12": [{year: "1955", text: "小儿麻痹症疫苗宣布安全有效", link: ""}],
+    "4.23": [{year: "1983", text: "HIV被确认为艾滋病病因", link: ""}],
+    "5.8":  [{year: "1980", text: "WHO宣布天花灭绝", link: ""}],
+    "5.14": [{year: "1796", text: "詹纳首次接种牛痘预防天花", link: ""}],
+    "5.17": [{year: "1749", text: "爱德华·詹纳出生", link: ""}],
+    "6.5":  [{year: "1967", text: "克里斯蒂安·巴纳德完成首例心脏移植", link: ""}],
+    "6.16": [{year: "1978", text: "路易丝·布朗（首个试管婴儿）出生", link: ""}],
+    "6.28":[{year: "2000", text: "人类基因组草图完成", link: "https://baike.baidu.com/item/人类基因组计划"}],
+    "7.25": [{year: "1978", text: "路易丝·布朗诞生（试管婴儿）", link: ""}],
+    "9.14":[{year: "1895", text: "伦琴发现X射线", link: ""}],
+    "9.28":[{year: "1928", text: "弗莱明发现青霉素", link: "https://baike.baidu.com/item/亚历山大·弗莱明"}],
+    "11.26":[{year: "1922", text: "胰岛素首次用于人体", link: ""}],
+    "12.1": [{year: "1988", text: "首个世界艾滋病日", link: ""}],
+    "12.10":[{year: "1901", text: "首届诺贝尔生理学或医学奖颁发", link: "https://baike.baidu.com/item/诺贝尔奖"}],
+    "12.11":[{year: "1984", text: "首例成功的全脸移植", link: ""}],
+    "12.23":[{year: "1967", text: "首例成功的心脏移植", link: ""}],
+  },
+};
+
+</script>
+
+<script>
+/* ============================================================
+ * app.js —— 全部业务逻辑（内联）
+ * 含：知识科普生成 / 主题生成 / 订阅管理 / 历史浏览 / Excel转ICS 引擎
+ * ============================================================ */
+/* ============================================================
+ * app.js — 知识科普ICS生成器核心逻辑
+ * 依赖：events.js（须先于本文件引入）
+ * ============================================================ */
+
+/* ---------- 工具函数 ---------- */
+function getEventLink(event) {
+  if (event.link && event.link.trim()) return event.link.trim();
+  const kw = event.text.slice(0, 20).replace(/[·•·/\\]/g, ' ').trim();
+  return `https://baike.baidu.com/search?word=${encodeURIComponent(kw)}`;
+}
+
+function escapeForICS(str) {
+  return String(str)
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\n/g, '\\n');
+}
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function isLeap(year) {
+  return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+}
+
+/* ---------- 农历传统节日库（按农历月日，运行时换算为公历日期） ---------- */
+const LUNAR_FESTIVALS = {
+  "1.1":  [{ year: "正月初一", text: "春节｜农历新年，辞旧迎新、阖家团圆、拜年守岁", link: "https://baike.baidu.com/item/春节" }],
+  "1.5":  [{ year: "正月初五", text: "破五·迎财神｜送穷神、开市迎财，年味最浓的日子", link: "https://baike.baidu.com/item/破五" }],
+  "1.15": [{ year: "正月十五", text: "元宵节｜赏花灯、吃元宵、猜灯谜，新年第一个月圆之夜", link: "https://baike.baidu.com/item/元宵节" }],
+  "2.2":  [{ year: "二月初二", text: "龙抬头｜春耕之始，剃龙头、吃龙食，万物复苏", link: "https://baike.baidu.com/item/龙抬头" }],
+  "2.15": [{ year: "二月十五", text: "花朝节｜百花生日，踏青赏红、祭花神，又叫花神节", link: "https://baike.baidu.com/item/花朝节" }],
+  "3.3":  [{ year: "三月初三", text: "上巳节｜临水祓禊、曲水流觞，也是壮族的歌圩节", link: "https://baike.baidu.com/item/上巳节" }],
+  "4.8":  [{ year: "四月初八", text: "浴佛节｜释迦牟尼诞辰，寺院浴佛、祈福消灾", link: "https://baike.baidu.com/item/浴佛节" }],
+  "5.5":  [{ year: "五月初五", text: "端午节｜赛龙舟、吃粽子、挂艾草，纪念屈原", link: "https://baike.baidu.com/item/端午节" }],
+  "6.6":  [{ year: "六月初六", text: "天贶节｜晒衣晒书，民间也称姑姑节", link: "https://baike.baidu.com/item/天贶节" }],
+  "7.7":  [{ year: "七月初七", text: "七夕节｜乞巧节，牛郎织女鹊桥相会", link: "https://baike.baidu.com/item/七夕节" }],
+  "7.15": [{ year: "七月十五", text: "中元节｜盂兰盆节，祭祖、放河灯", link: "https://baike.baidu.com/item/中元节" }],
+  "8.15": [{ year: "八月十五", text: "中秋节｜赏月、吃月饼、家人团圆，与春节齐名", link: "https://baike.baidu.com/item/中秋节" }],
+  "9.9":  [{ year: "九月初九", text: "重阳节｜登高、赏菊、敬老，日月并阳故名重阳", link: "https://baike.baidu.com/item/重阳节" }],
+  "10.1": [{ year: "十月初一", text: "寒衣节｜送寒衣、祭先人，与清明、中元并称三大祭祖节", link: "https://baike.baidu.com/item/寒衣节" }],
+  "10.15":[{ year: "十月十五", text: "下元节｜水官解厄之日，祈愿消灾解厄", link: "https://baike.baidu.com/item/下元节" }],
+  "12.8": [{ year: "腊月初八", text: "腊八节｜喝腊八粥、泡腊八蒜，年味开始渐浓", link: "https://baike.baidu.com/item/腊八节" }],
+  "12.23":[{ year: "腊月廿三", text: "小年·祭灶｜扫尘祭灶神，正式进入过年节奏", link: "https://baike.baidu.com/item/小年" }],
+};
+/* 除夕：农历腊月最后一天，公历日期每年不同，运行时判定 */
+const LUNAR_NEW_YEAR_EVE = { year: "腊月除夕", text: "除夕｜贴春联、吃年夜饭、守岁，辞旧迎新", link: "https://baike.baidu.com/item/除夕" };
+/* 农历月名 -> 数字 */
+const LUNAR_MONTH_NUM = { "正月": 1, "一月": 1, "二月": 2, "三月": 3, "四月": 4, "五月": 5, "六月": 6, "七月": 7, "八月": 8, "九月": 9, "十月": 10, "冬月": 11, "十一月": 11, "腊月": 12, "十二月": 12 };
+
+/* ---------- 少数民族传统节日：fests 每项 = [节日名, 月.日, 类型, 说明]；l=农历 s=公历 i=伊斯兰历 x=大致时节 ---------- */
+const ETHNIC_GROUPS = [
+  {name:"蒙古族",emoji:"🐎",area:"内蒙古·东北·西北",fests:[["那达慕大会","7.15","s","赛马、摔跤、射箭的草原盛会"],["查干萨日（白节）","1.1","l","蒙古族新年，祭天祭祖"],["祭敖包","5.13","l","祭祀山神路神，祈求风调雨顺"]]},
+  {name:"回族",emoji:"🕌",area:"宁夏·甘肃·青海",fests:[["开斋节","10.1","i","斋月圆满，会礼、宴客、走亲"],["古尔邦节","12.10","i","宰牲献祭，又称宰牲节"],["圣纪节","3.12","i","纪念穆罕默德的诞辰与忌日"]]},
+  {name:"藏族",emoji:"🏔️",area:"西藏·青海·四川·甘肃·云南",fests:[["藏历新年","1.1","l","献哈达、跳锅庄，最隆重的节日"],["雪顿节","6.30","l","意为酸奶宴，看藏戏、展佛"],["望果节","8.1","l","秋收前绕田祈福，转田、赛马"]]},
+  {name:"维吾尔族",emoji:"🍇",area:"新疆",fests:[["古尔邦节","12.10","i","宰牲宴客，跳麦西热甫"],["肉孜节（开斋节）","10.1","i","斋月结束，互相拜节"],["诺鲁孜节","3.21","s","春分迎新，做诺鲁孜饭"]]},
+  {name:"苗族",emoji:"🎋",area:"贵州·湖南·云南·广西",fests:[["苗年","10.1","l","苗族新年，杀年猪、跳芦笙"],["姊妹节","3.15","l","以姊妹饭传情，东方最古老的情人节"],["四月八","4.8","l","纪念苗族英雄亚努，跳花、对歌"]]},
+  {name:"彝族",emoji:"🔥",area:"四川·云南·贵州·广西",fests:[["火把节","6.24","l","点火把驱虫祈福，斗牛、跳达体舞"],["彝族年","10.1","l","彝历新年，杀年猪、祭祖、赛马"],["插花节","2.8","l","采马缨花祭花神，云南大姚彝族节日"]]},
+  {name:"壮族",emoji:"🐸",area:"广西·云南·广东",fests:[["三月三歌圩","3.3","l","对山歌、抛绣球，又称歌节"],["蚂拐节","1.1","l","祭祀青蛙神，祈求风调雨顺"],["牛魂节","4.8","l","为耕牛洗身喂料，报谢耕牛"]]},
+  {name:"布依族",emoji:"🎵",area:"贵州",fests:[["六月六","6.6","l","祭祖、对歌、赶桥会，最盛大的节日"],["三月三","3.3","l","祭山神，吃五色糯米饭"],["查白歌节","6.21","l","纪念查郎白妹，对歌赶集"]]},
+  {name:"朝鲜族",emoji:"🥁",area:"吉林·黑龙江·辽宁",fests:[["上元节","1.15","l","赏月、跳板、摔跤"],["秋夕（中秋）","8.15","l","扫墓祭祖、吃松饼"],["流头节","6.15","l","洗头沐浴、饮酒歌舞"]]},
+  {name:"满族",emoji:"🏹",area:"辽宁·吉林·黑龙江·河北",fests:[["颁金节","10.13","l","纪念满族定名，穿旗装、跳萨满舞"],["二月二","2.2","l","龙抬头，吃猪头肉、剃龙头"],["中元节","7.15","l","祭祖、放河灯"]]},
+  {name:"侗族",emoji:"🌾",area:"贵州·湖南·广西",fests:[["侗年","11.1","l","侗族新年，祭祖、踩歌堂、唱侗戏"],["三月三","3.3","l","抢花炮、对歌、斗牛"],["祭萨节","1.7","l","祭祀侗族祖母神萨岁"]]},
+  {name:"瑶族",emoji:"🥁",area:"广西·湖南·云南·广东",fests:[["盘王节","10.16","l","祭祀始祖盘王，跳长鼓舞，最盛大节日"],["达努节","5.29","l","纪念始祖母密洛陀，又叫祖娘节"],["陀螺节","1.15","l","打陀螺比赛，传统体育节日"]]},
+  {name:"白族",emoji:"🌸",area:"云南·贵州·湖南",fests:[["三月街","3.15","l","大理千年古集，赛马、对歌"],["绕三灵","4.23","l","绕游三塔，歌舞祭祀"],["火把节","6.25","l","点火把、赛马、跳霸王鞭"]]},
+  {name:"土家族",emoji:"🐅",area:"湖南·湖北·重庆·贵州",fests:[["社巴节（摆手节）","1.3","l","跳摆手舞、祭祖先，最隆重节日"],["女儿会","7.12","l","恩施土家族婚恋节日，对歌择偶"],["牛王节","4.8","l","祭祀牛王，给牛喂好料"]]},
+  {name:"哈尼族",emoji:"🌾",area:"云南",fests:[["十月年（扎勒特）","10.1","l","哈尼族新年，长街宴、荡秋千"],["六月年（苦扎扎）","6.24","l","祭天神、打磨秋、摔跤"],["新米节","7.15","l","尝新米、祭谷神"]]},
+  {name:"哈萨克族",emoji:"🐴",area:"新疆·甘肃",fests:[["纳吾鲁孜节","3.21","s","春分迎新，喝纳吾鲁孜粥"],["古尔邦节","12.10","i","宰牲宴客，赛马、叼羊"],["阿肯弹唱会","7.15","s","草原盛会，阿肯即兴弹唱对歌"]]},
+  {name:"傣族",emoji:"💧",area:"云南",fests:[["泼水节","ny","d","傣历新年，泼水祝福、赛龙舟、放高升"],["关门节","9.15","d","傣历九月十五，入夏安居、赕佛祈福"],["开门节","12.15","d","傣历十二月十五，安居结束、放孔明灯"]]},
+  {name:"黎族",emoji:"🐂",area:"海南",fests:[["三月三","3.3","l","最盛大节日，对歌、跳竹竿舞"],["军坡节","2.5","l","纪念冼夫人，巡游、装军"],["牛节","4.8","l","祭祀牛神，犒劳耕牛"]]},
+  {name:"傈僳族",emoji:"⚔️",area:"云南·四川",fests:[["阔时节","12.20","s","傈僳族新年，跳阿尺木刮、上刀山"],["刀杆节","1.15","l","爬刀杆、下火海，显现勇敢"],["澡塘会","1.3","l","登埂温泉沐浴，对歌赛歌"]]},
+  {name:"佤族",emoji:"🥁",area:"云南",fests:[["新米节","8.15","l","尝新米、祭谷神"],["拉木鼓节","1.11","l","拉木鼓祭山神，最隆重的祭典"],["摸你黑狂欢节","5.1","s","互相涂抹祝福，阿佤山狂欢"]]},
+  {name:"畲族",emoji:"🌿",area:"福建·浙江·江西·广东",fests:[["三月三（乌饭节）","3.3","l","吃乌米饭、祭祖、对歌"],["二月二（会亲节）","2.2","l","宗亲聚会、祭祖"],["封龙节","6.15","l","祭祀龙神，祈求风调雨顺"]]},
+  {name:"高山族",emoji:"🌊",area:"台湾·福建",fests:[["丰年祭","7.15","s","最盛大的祭典，歌舞酬神"],["播种祭","2.15","s","播种前祭祀祖灵、祈求丰收"],["祖灵祭","8.15","s","祭祀祖先，祈求平安"]]},
+  {name:"拉祜族",emoji:"🏹",area:"云南",fests:[["扩塔节（拉祜年）","1.1","l","拉祜族新年，跳芦笙舞"],["火把节","6.24","l","点火把、撒松香驱邪"],["葫芦节","4.8","s","纪念葫芦生人的传说"]]},
+  {name:"水族",emoji:"🌊",area:"贵州·广西·云南",fests:[["端节","水历十二月","x","水族新年，逢亥日举行，赛马、祭祖"],["卯节","6.15","l","对歌、祭祖，又称东方情人节"],["苏宁喜节","1.5","l","敬祭生母娘娘，又称儿童节"]]},
+  {name:"东乡族",emoji:"🕌",area:"甘肃",fests:[["开斋节","10.1","i","斋月结束，会礼、宴客"],["古尔邦节","12.10","i","宰牲献祭"],["圣纪节","3.12","i","纪念穆罕默德诞辰"]]},
+  {name:"纳西族",emoji:"🎶",area:"云南",fests:[["三朵节","2.8","l","祭祀三朵神，丽江纳西族最盛大节日"],["火把节","6.25","l","点火把、跳阿丽哩"],["骡马会","7.15","l","丽江骡马交易会，赛马、对歌"]]},
+  {name:"景颇族",emoji:"💃",area:"云南",fests:[["目瑙纵歌","1.15","l","万人齐跳目瑙纵歌，最盛大节日"],["新米节","8.15","l","尝新米、祭谷神"],["能仙节（采花节）","3.15","l","采花对歌、青年社交"]]},
+  {name:"柯尔克孜族",emoji:"🏔️",area:"新疆",fests:[["诺鲁孜节","3.21","s","春分迎新，做诺鲁孜饭"],["古尔邦节","12.10","i","宰牲宴客，赛马、叼羊"],["马奶节","7.15","s","饮马奶酒、赛马"]]},
+  {name:"土族",emoji:"🏵️",area:"青海·甘肃",fests:[["纳顿节","7.13","l","土族最长的节日，跳会手舞庆丰收"],["擂台会","6.15","l","对歌、赛马、比武"],["安昭舞节","1.15","l","跳安昭舞，祭祖祈福"]]},
+  {name:"达斡尔族",emoji:"🦌",area:"内蒙古·黑龙江·新疆",fests:[["阿涅节（春节）","1.1","l","达斡尔族新年，祭天祭祖、拜年"],["抹灰节","1.16","l","正月十六抹黑灰，互相祝福"],["库木勒节","5.15","s","采柳蒿芽，庆丰收"]]},
+  {name:"仫佬族",emoji:"🍚",area:"广西",fests:[["依饭节","农历十月立冬后","x","最盛大节日，祭祖、唱戏、请客"],["走坡节","8.15","l","青年男女走坡对歌"],["后生节","3.3","l","祭祖、对歌"]]},
+  {name:"羌族",emoji:"🏔️",area:"四川",fests:[["羌年","10.1","l","羌族新年，祭山、跳萨朗"],["瓦尔俄足节","5.5","l","羌族妇女节，祭女神、歌舞"],["转山会","6.24","l","绕山祭祀，祈求平安"]]},
+  {name:"布朗族",emoji:"🌿",area:"云南",fests:[["桑康节（泼水节）","ny","d","泼水祝福，布朗族新年"],["新米节","8.15","l","尝新米、祭谷神"],["开门节","12.15","d","傣历十二月十五，安居结束"]]},
+  {name:"撒拉族",emoji:"🕌",area:"青海",fests:[["古尔邦节","12.10","i","宰牲献祭"],["开斋节","10.1","i","斋月结束，会礼宴客"],["圣纪节","3.12","i","纪念穆罕默德诞辰"]]},
+  {name:"毛南族",emoji:"🎋",area:"广西",fests:[["分龙节","5.15","l","最盛大节日，祭龙神、跳木面舞"],["南瓜节","9.9","l","打南瓜、庆丰收"],["药节","5.5","l","采药、祭神农"]]},
+  {name:"仡佬族",emoji:"🍚",area:"贵州·广西·云南",fests:[["吃新节","8.1","l","尝新米、祭祖，最隆重节日"],["牛王节","10.1","l","祭祀牛王与祖先"],["拜树节","3.3","l","祭树神，祈求丰收"]]},
+  {name:"锡伯族",emoji:"🏹",area:"新疆·辽宁·吉林",fests:[["西迁节","4.18","l","纪念锡伯族西迁戍边，射箭、歌舞"],["抹黑节","1.16","l","正月十六抹黑脸，祝福驱邪"],["灯官节","1.15","l","灯火节，舞狮、耍灯"]]},
+  {name:"阿昌族",emoji:"⚔️",area:"云南",fests:[["阿露窝罗节","3.15","l","最盛大节日，跳窝罗、祭先祖"],["会街节","9.15","l","赶街集会、对歌舞蹈"],["火把节","6.24","l","点火把驱邪"]]},
+  {name:"普米族",emoji:"🏔️",area:"云南·四川",fests:[["大过年","1.1","l","最隆重节日，祭祖、跳锅庄"],["吾昔节","12.8","l","普米族年节，祭祖、赛马"],["转山会","5.15","l","绕山祭祀，祈求平安"]]},
+  {name:"塔吉克族",emoji:"🦅",area:"新疆",fests:[["肖公巴哈尔节","3.21","s","塔吉克族新年，撒面粉祝福"],["皮里克节（灯节）","8.14","i","点灯祭祖，伊斯兰历八月"],["引水节","3.22","s","破冰引水，开犁播种"]]},
+  {name:"怒族",emoji:"🏔️",area:"云南",fests:[["鲜花节（仙女节）","3.15","l","贡山怒族祭仙女洞，献鲜花"],["祭谷神","5.15","l","祭祀谷神，祈求丰收"],["年节","12.29","l","怒族过年，祭祖、宴客"]]},
+  {name:"乌孜别克族",emoji:"🕌",area:"新疆",fests:[["古尔邦节","12.10","i","宰牲献祭，宴客"],["肉孜节","10.1","i","开斋节，互相拜节"],["诺鲁孜节","3.21","s","春分迎新"]]},
+  {name:"俄罗斯族",emoji:"⛪",area:"新疆·内蒙古·黑龙江",fests:[["巴斯克节","东正教复活节","x","染彩蛋、烤复活节面包"],["圣诞节","1.7","s","东正教圣诞节，1月7日"],["谢肉节","送冬迎春","x","吃薄饼、烧稻草人迎春"]]},
+  {name:"鄂温克族",emoji:"🦌",area:"内蒙古·黑龙江",fests:[["瑟宾节","6.18","s","鄂温克族传统节日，歌舞、赛马"],["米阔鲁节","5.22","s","剪马鬃、烙马印，庆丰收"],["阿涅节","1.1","l","鄂温克族新年，祭火神"]]},
+  {name:"德昂族",emoji:"🌸",area:"云南",fests:[["泼水节","ny","d","泼水祝福，德昂族新年"],["龙阳节","2.15","l","德昂族敬老节，敬献老人"],["开门节","12.15","d","安居结束，赕佛"]]},
+  {name:"保安族",emoji:"🕌",area:"甘肃",fests:[["开斋节","10.1","i","斋月结束，会礼、宴客"],["古尔邦节","12.10","i","宰牲献祭"],["圣纪节","3.12","i","纪念穆罕默德诞辰"]]},
+  {name:"裕固族",emoji:"🐎",area:"甘肃",fests:[["春节","1.1","l","裕固族过年，祭祖、宴客"],["剪马鬃节","4.11","l","给马剪鬃、烙印，庆丰收"],["祭鄂博","6.15","l","祭敖包，祈求平安"]]},
+  {name:"京族",emoji:"🌊",area:"广西",fests:[["哈节","6.10","l","最盛大节日，唱哈、祭海神"],["中元节","7.14","l","祭祖施孤，京族最重视的祭祀日"],["食新米节","10.10","l","尝新米、祭祖"]]},
+  {name:"塔塔尔族",emoji:"🕌",area:"新疆",fests:[["撒班节（犁头节）","6.20","s","最盛大节日，歌舞、赛马"],["肉孜节","10.1","i","开斋节"],["古尔邦节","12.10","i","宰牲节"]]},
+  {name:"独龙族",emoji:"🏔️",area:"云南",fests:[["卡雀哇（独龙年）","农历腊月","x","唯一传统节日，剽牛祭天、跳锅庄"],["剽牛祭天","农历冬月","x","宰牛祭天，全寨分食共庆"]]},
+  {name:"鄂伦春族",emoji:"🦌",area:"内蒙古·黑龙江",fests:[["古伦木沓节","6.18","s","篝火节，祭火神、跳罕拜舞"],["祭月","8.15","l","八月十五祭月神"],["拜火神","1.1","l","新年祭火神，祈求狩猎平安"]]},
+  {name:"赫哲族",emoji:"🐟",area:"黑龙江",fests:[["乌日贡节","6.15","s","传统节日，叉草球、跳天鹅舞"],["河灯节","7.15","l","放河灯祭江神、悼亡灵"],["鹿神节","9.15","l","祭鹿神，祈求狩猎丰收"]]},
+  {name:"门巴族",emoji:"🏔️",area:"西藏",fests:[["门巴新年","1.1","l","门巴族新年，祭祖、跳羌姆"],["达羌节","3.15","l","传统节日，转经、歌舞"],["主巴大法会","1.15","l","宗教节日，跳羌姆祈福"]]},
+  {name:"珞巴族",emoji:"🏹",area:"西藏",fests:[["昂德林节","9.15","l","丰收节，祭祖、歌舞"],["库玛央节","3.15","l","部落祭祀节日"],["巴绕节","12.15","l","珞巴族年节，祭祖、宴客"]]},
+  {name:"基诺族",emoji:"🥁",area:"云南",fests:[["特懋克节","2.6","s","基诺族新年（打铁节），敲太阳鼓"],["新米节","8.15","l","尝新米、祭谷神"],["火把节","6.24","l","点火把驱邪"]]},
+
+];
+
+
+/* ---------- 农历换算：用浏览器内置的中国农历(Intl)把公历日期映射成农历 ---------- */
+let _lunarFmt;
+function initLunarFmt() {
+  if (_lunarFmt !== undefined) return _lunarFmt;
+  try {
+    _lunarFmt = new Intl.DateTimeFormat("zh-CN-u-ca-chinese", { month: "long", day: "numeric", timeZone: "UTC" });
+  } catch (e) { _lunarFmt = false; }
+  return _lunarFmt;
+}
+/* 公历 Date -> 农历 {m, d, isLeap}；无法换算返回 null */
+function solarToLunar(date) {
+  const fmt = initLunarFmt();
+  if (!fmt) return null;
+  try {
+    const parts = fmt.formatToParts(date);
+    let monthStr = "", dayNum = 0;
+    for (const p of parts) {
+      if (p.type === "month") monthStr = p.value;
+      else if (p.type === "day") dayNum = parseInt(p.value, 10);
+    }
+    const isLeapMonth = monthStr.indexOf("闰") === 0;
+    const name = isLeapMonth ? monthStr.slice(1) : monthStr;
+    const m = LUNAR_MONTH_NUM[name];
+    if (!m || !dayNum) return null;
+    return { m: m, d: dayNum, isLeap: isLeapMonth };
+  } catch (e) { return null; }
+}
+/* 把农历节日换算成某公历年的公历月日事件库，供 buildEvents 使用 */
+function buildLunarFestivalDB(year) {
+  const out = {};
+  if (!initLunarFmt()) return out;
+  const daysInYear = isLeap(year) ? 366 : 365;
+  const start = Date.UTC(year, 0, 1);
+  for (let i = 0; i < daysInYear; i++) {
+    const dt = new Date(start + i * 86400000);
+    const lun = solarToLunar(dt);
+    if (!lun || lun.isLeap) continue;
+    let items = LUNAR_FESTIVALS[lun.m + "." + lun.d];
+    const next = solarToLunar(new Date(start + (i + 1) * 86400000));
+    if (next && next.m === 1 && next.d === 1) items = (items || []).concat([LUNAR_NEW_YEAR_EVE]);
+    if (items && items.length) {
+      const skey = (dt.getUTCMonth() + 1) + "." + dt.getUTCDate();
+      out[skey] = (out[skey] || []).concat(items);
+    }
+  }
+  return out;
+}
+
+/* ---------- 自实现历法换算（不依赖 ICU） ---------- */
+function gregToJdn(y, m, d) {
+  const a = Math.floor((14 - m) / 12), yy = y + 4800 - a, mm = m + 12 * a - 3;
+  return d + Math.floor((153 * mm + 2) / 5) + 365 * yy + Math.floor(yy / 4) - Math.floor(yy / 100) + Math.floor(yy / 400) - 32045;
+}
+function jdnToGreg(j) {
+  const a = j + 32044, b = Math.floor((4 * a + 3) / 146097), c = a - Math.floor(146097 * b / 4);
+  const d = Math.floor((4 * c + 3) / 1461), e = c - Math.floor(1461 * d / 4), m = Math.floor((5 * e + 2) / 153);
+  return { y: 100 * b + d - 4800 + Math.floor(m / 10), m: m + 3 - 12 * Math.floor(m / 10), d: e - Math.floor((153 * m + 2) / 5) + 1 };
+}
+/* 伊斯兰历 表格/算术历（教内标准，30年11闰，纪元 1 Muharram 1 AH = 622-07-16） */
+function hijriToJdn(y, m, d) {
+  return d + Math.ceil(29.5 * (m - 1)) + (y - 1) * 354 + Math.floor((3 + 11 * y) / 30) + 1948439;
+}
+function jdnToHijri(jdn) {
+  let y = Math.floor((30 * (jdn - 1948440) + 10646) / 10631), m = 1;
+  while (m < 12 && hijriToJdn(y, m + 1, 1) <= jdn) m++;
+  return { y: y, m: m, d: jdn - hijriToJdn(y, m, 1) + 1 };
+}
+/* 傣历（纪元 638-03-22 = 傣历0年元旦；19年7闰，闰九月） */
+function daiNewYearJdn(y) { return Math.floor((394479457 * y + 1609723) / 1080000) + 1954166; }
+function daiIsLeap(y) { const s = (y + 1) % 19; return s === 0 || s === 2 || s === 5 || s === 8 || s === 10 || s === 13 || s === 16; }
+const DAI_ORDER = [6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5];
+function daiMonthLen(y, m) {
+  if (m === 8) return daiIsLeap(y) ? 29 : ((daiNewYearJdn(y + 1) - daiNewYearJdn(y) === 355) ? 30 : 29);
+  if (m === 6 || m === 10 || m === 12 || m === 2 || m === 4) return 29;
+  return 30;
+}
+function daiToJdn(y, m, d) {
+  let j = daiNewYearJdn(y);
+  const leap = daiIsLeap(y);
+  for (let i = 0; i < DAI_ORDER.length; i++) {
+    const mm = DAI_ORDER[i];
+    if (mm === m) return j + d - 1;
+    j += daiMonthLen(y, mm);
+    if (leap && mm === 9) j += 30;
+  }
+  return j + d - 1;
+}
+function daiFestJdn(gy, code) {
+  const dy = gy - 638;
+  if (code === "ny") return daiNewYearJdn(dy);
+  const pp = code.split(".");
+  return daiToJdn(dy, parseInt(pp[0], 10), parseInt(pp[1], 10));
+}
+/* ---------- 少数民族节日：多历法换算 ---------- */
+let _islamicFmt;
+function initIslamicFmt() {
+  if (_islamicFmt !== undefined) return _islamicFmt;
+  try { _islamicFmt = new Intl.DateTimeFormat("zh-CN-u-ca-islamic", { month: "numeric", day: "numeric", timeZone: "UTC" }); }
+  catch (e) { _islamicFmt = false; }
+  return _islamicFmt;
+}
+function lunarSolarMap(year) {
+  const map = {};
+  if (!initLunarFmt()) return map;
+  const n = isLeap(year) ? 366 : 365;
+  const start = Date.UTC(year, 0, 1);
+  for (let i = 0; i < n; i++) {
+    const dt = new Date(start + i * 86400000);
+    const lun = solarToLunar(dt);
+    if (lun && !lun.isLeap) { const k = lun.m + "." + lun.d; if (!map[k]) map[k] = (dt.getUTCMonth() + 1) + "." + dt.getUTCDate(); }
+  }
+  return map;
+}
+function islamicSolarMap(year) {
+  const map = {};
+  const n = isLeap(year) ? 366 : 365;
+  const start = Date.UTC(year, 0, 1);
+  for (let i = 0; i < n; i++) {
+    const dt = new Date(start + i * 86400000);
+    const h = jdnToHijri(gregToJdn(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate()));
+    const k = h.m + "." + h.d;
+    if (!map[k]) map[k] = (dt.getUTCMonth() + 1) + "." + dt.getUTCDate();
+  }
+  return map;
+}
+function ethGroupDb(year, groups) {
+  const byDay = {};
+  const lmap = lunarSolarMap(year);
+  const imap = islamicSolarMap(year);
+  groups.forEach(function (g) {
+    g.fests.forEach(function (f) {
+      const name = f[0], md = f[1], t = f[2], desc = f[3];
+      let sk = null;
+      if (t === "s") sk = md;
+      else if (t === "l") sk = lmap[md];
+      else if (t === "i") sk = imap[md];
+      else if (t === "d") { if (md === "ny") { const gg = jdnToGreg(daiNewYearJdn(year - 638)); sk = gg.m + "." + gg.d; } else { const pp = md.split("."); const lm = ((parseInt(pp[0], 10) + 9) % 12) || 12; sk = lmap[lm + "." + pp[1]]; } }
+      if (!sk) return;
+      if (!byDay[sk]) byDay[sk] = { names: [], fests: [] };
+      byDay[sk].names.push(g.name);
+      byDay[sk].fests.push(name + "（" + g.name + "）｜" + desc);
+    });
+  });
+  const out = {};
+  for (const sk in byDay) out[sk] = [{ year: byDay[sk].names.join("·"), text: byDay[sk].fests.join("；"), link: "" }];
+  return out;
+}
+function assembleIcs(evs, prodId, calName, calDesc) {
+  const C = String.fromCharCode(13, 10);
+  return "BEGIN:VCALENDAR" + C + "VERSION:2.0" + C + "PRODID:-//" + prodId + "//CN" + C + "CALSCALE:GREGORIAN" + C + "METHOD:PUBLISH" + C + "X-WR-CALNAME:" + calName + C + "X-WR-CALDESC:" + calDesc + C + evs.join(C) + C + "END:VCALENDAR";
+}
+function downloadIcs(ics, filename) {
+  const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+}
+function ethDateLabel(f) {
+  const md = f[1], t = f[2];
+  if (t === "x") return md;
+  if (t === "d") return md === "ny" ? "傣历新年" : ("傣历" + md.replace(".", "月") + "日");
+  if (t === "h") return "伊斯兰历" + md.replace(".", "月") + "日";
+  const p = md.split(".");
+  const pre = t === "l" ? "农历" : (t === "i" ? "伊斯兰历" : "公历");
+  return pre + p[0] + "月" + p[1] + "日";
+}
+function setEthStats(msg) { const box = document.getElementById("ethGenStats"); if (box) box.textContent = msg; }
+function renderEthList() {
+  const box = document.getElementById("ethList");
+  if (!box) return;
+  const se = document.getElementById("ethSearch");
+  const q = (se && se.value ? se.value : "").trim().toLowerCase();
+  const list = ETHNIC_GROUPS.filter(function (g) {
+    if (!q) return true;
+    if (g.name.toLowerCase().indexOf(q) >= 0) return true;
+    if ((g.area || "").toLowerCase().indexOf(q) >= 0) return true;
+    return g.fests.some(function (f) { return (f[0] + f[3]).toLowerCase().indexOf(q) >= 0; });
+  });
+  if (!list.length) { box.innerHTML = `<div class="know-empty">没有匹配的民族或节日，换个关键词试试</div>`; return; }
+  box.innerHTML = list.map(function (g) {
+    const idx = ETHNIC_GROUPS.indexOf(g);
+    const rows = g.fests.map(function (f) {
+      return `<div class="eth-fest"><span class="eth-fest-name">${f[0]}</span><span class="eth-fest-date">${ethDateLabel(f)}</span><div class="eth-fest-desc">${f[3]}</div></div>`;
+    }).join("");
+    return `<details class="eth-card"><summary><span class="eth-emoji">${g.emoji}</span><span class="eth-name">${g.name}</span><span class="eth-area">${g.area || ""}</span><span class="eth-count">${g.fests.length}个节日</span></summary><div class="eth-fests">${rows}</div><button class="btn-primary btn-sm" style="margin:8px 12px 12px;" onclick="generateEthICS(${idx})">📥 生成该民族节日ICS</button></details>`;
+  }).join("");
+}
+function generateEthICS(idx) {
+  const g = ETHNIC_GROUPS[idx];
+  if (!g) return;
+  const eb = document.getElementById("ethGenYear");
+  const year = parseInt(eb && eb.value) || new Date().getFullYear();
+  const db = ethGroupDb(year, [g]);
+  const cnt = Object.keys(db).length;
+  if (!cnt) { setEthStats("⚠️ 无法换算「" + g.name + "」的节日日期"); return; }
+  setEthStats("生成中...");
+  const d = Object.assign({}, db); d.themeKey = "ethnic";
+  const evs = buildEvents(year, d, "🎎", true);
+  downloadIcs(assembleIcs(evs, "EthnicICS", g.name + "传统节日", g.name + "传统节日提醒"), g.name + "_" + year + ".ics");
+  addSub(g.name + "传统节日", year, evs.length);
+  setEthStats("✅ 已生成「" + g.name + "」" + evs.length + " 条节日（" + year + "年）");
+  showToast("✅ 已生成「" + g.name + "」ICS");
+}
+function generateEthAllICS() {
+  const eb = document.getElementById("ethGenYear");
+  const year = parseInt(eb && eb.value) || new Date().getFullYear();
+  const db = ethGroupDb(year, ETHNIC_GROUPS);
+  const cnt = Object.keys(db).length;
+  if (!cnt) { setEthStats("⚠️ 无法换算节日日期"); return; }
+  setEthStats("生成中...");
+  const d = Object.assign({}, db); d.themeKey = "ethnic";
+  const evs = buildEvents(year, d, "🎎", true);
+  downloadIcs(assembleIcs(evs, "EthnicICS", "少数民族传统节日", "中国55个少数民族传统节日"), "少数民族传统节日_" + year + ".ics");
+  addSub("少数民族传统节日", year, evs.length);
+  setEthStats("✅ 已生成全部民族节日 " + evs.length + " 条（" + year + "年）");
+  showToast("✅ 已生成「少数民族传统节日」ICS");
+}
+/* 生成指定年、指定主题库的所有VEVENT，返回字符串数组 */
+function buildEvents(year, db, emoji, onlyWithContent) {
+  const daysInMonth = [31, isLeap(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const evs = [];
+  let uidBase = Date.now();
+  const dtstamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  const themeFillers = {
+    world: '今天在历史上是平静的一天',
+    science: '今天科学史上暂无特别发现',
+    astronomy: '今天暂无特别天象',
+    art: '今天艺术史上暂无特别事件',
+    literature: '今天文学史上暂无特别作品',
+    computer: '今天计算机史上暂无特别事件',
+    music: '今天音乐史上暂无特别事件',
+    medicine: '今天医学史上暂无特别进展',
+  };
+  const fillerText = db.themeKey === "festival" ? "今天暂无传统节日" : (themeFillers[db.themeKey] || themeFillers.world);
+
+  for (let m = 1; m <= 12; m++) {
+    for (let d = 1; d <= daysInMonth[m - 1]; d++) {
+      const key = `${m}.${d}`;
+      const events = db[key];
+      let selected;
+      if (events && events.length > 0) {
+        selected = events[0];
+      } else if (onlyWithContent) {
+        continue;
+      } else {
+        selected = { year: "—", text: fillerText };
+      }
+      const dateStr = `${year}${pad2(m)}${pad2(d)}`;
+      const title = `${emoji} ${selected.year} · ${selected.text.slice(0, 45)}`;
+      const link = getEventLink(selected);
+      let ev = 'BEGIN:VEVENT\r\n';
+      ev += `UID:${uidBase++}@${db.themeKey}.local\r\n`;
+      ev += `DTSTAMP:${dtstamp}\r\n`;
+      ev += `DTSTART;TZID=Asia/Shanghai:${dateStr}T120000\r\n`;
+      ev += `SUMMARY:${escapeForICS(title)}\r\n`;
+      ev += `URL:${link}\r\n`;
+      ev += `DESCRIPTION:${emoji} ${selected.year} - ${escapeForICS(selected.text)}\\n\\n🔗 ${link}\r\n`;
+      ev += 'BEGIN:VALARM\r\n';
+      ev += 'TRIGGER:-PT0S\r\n';
+      ev += 'ACTION:DISPLAY\r\n';
+      ev += `DESCRIPTION:${escapeForICS(title)}\r\n`;
+      ev += 'END:VALARM\r\n';
+      ev += 'END:VEVENT';
+      evs.push(ev);
+    }
+  }
+  return evs;
+}
+
+/* 生成完整ICS并触发下载 */
+function generateICS(year, themeKey, themeName, emoji, statsId) {
+  const stats = document.getElementById(statsId || 'themeGenStats');
+  if (stats) stats.textContent = '生成中...';
+
+  const dbObj = themeKey === "festival" ? buildLunarFestivalDB(year) : (THEME_DATABASES[themeKey] || HIST_EVENTS_DB);
+  // 包一层，带 themeKey 方便 fillter / UID 使用
+  const db = Object.assign({}, dbObj);
+  db.themeKey = themeKey;
+
+  const evs = buildEvents(year, db, emoji, themeKey === "festival" && Object.keys(dbObj).length > 0);
+  const ics =
+    'BEGIN:VCALENDAR\r\n' +
+    'VERSION:2.0\r\n' +
+    `PRODID:-//HistoryICS//${themeKey}//CN\r\n` +
+    'CALSCALE:GREGORIAN\r\n' +
+    'METHOD:PUBLISH\r\n' +
+    'X-WR-CALNAME:' + themeName + '\r\n' +
+    'X-WR-CALDESC:' + themeName + ' 每日知识提醒\r\n' +
+    evs.join('\r\n') + '\r\n' +
+    'END:VCALENDAR';
+
+  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${themeName}_${year}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  addSub(themeName, year, evs.length);
+  const filled = evs.length; // 实际全部生成（含filler在库内处理）
+  if (stats) stats.textContent = `✅ 已生成「${themeName}」${filled} 条（${year}年），中午12:00提醒，含百科链接。`;
+  showToast(`✅ 已生成「${themeName}」ICS`);
+}
+
+/* ---------- 主题元数据 ---------- */
+const THEME_META = {
+  world:      { name: '世界历史', emoji: '📜', desc: '通用历史大事件' },
+  science:    { name: '科学史',   emoji: '🔬', desc: '重大发现与发明' },
+  astronomy:  { name: '天文日历', emoji: '🔭', desc: '天象与航天里程碑' },
+  computer:   { name: '计算机史', emoji: '💻', desc: '技术里程碑' },
+  art:        { name: '艺术史',   emoji: '🎨', desc: '名作与艺术家' },
+  literature: { name: '文学日历', emoji: '📖', desc: '作家与作品' },
+  music:      { name: '音乐史',   emoji: '🎵', desc: '作曲家与首演' },
+  medicine:   { name: "医学史",   emoji: "🧬", desc: "医学突破" },
+  festival:   { name: "农历节日", emoji: "🏮", desc: "春节、端午、中秋等传统节日" },
+};
+
+/* ---------- Tab切换 ---------- */
+let currentTheme = 'world';
+
+function switchKnowTab(tab, el) {
+  document.querySelectorAll('.know-sub-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  ['hist', 'theme', 'eth', 'subs'].forEach(n => {
+    document.getElementById('know-' + n).classList.toggle('active', n === tab);
+  });
+  if (tab === 'subs') renderSubs();
+}
+
+function selectTheme(card) {
+  document.querySelectorAll('.know-theme-card').forEach(c => c.classList.remove('active'));
+  card.classList.add('active');
+  currentTheme = card.dataset.theme;
+}
+
+function applyPreset(name) {
+  const presets = {
+    student: ['science', 'literature', 'astronomy'],
+    tech:    ['computer', 'science', 'astronomy'],
+    liberal: ['art', 'literature', 'music'],
+    med:     ["medicine", "science", "astronomy"],
+    festival: ["festival"],
+  };
+  const themes = presets[name] || [];
+  const year = document.getElementById('themeGenYear').value || new Date().getFullYear();
+  themes.forEach((theme, idx) => {
+    setTimeout(() => {
+      const card = document.querySelector(`.know-theme-card[data-theme="${theme}"]`);
+      if (card) {
+        selectTheme(card);
+        const meta = THEME_META[theme];
+        generateICS(parseInt(year), theme, meta.name, meta.emoji, 'themeGenStats');
+      }
+    }, idx * 600);
+  });
+  showToast(`将依次生成${themes.length}个主题ICS`);
+}
+
+/* ---------- 历史上的今天：全年生成 ---------- */
+function generateHistYearICS() {
+  const year = parseInt(document.getElementById('histGenYear').value) || new Date().getFullYear();
+  generateICS(year, 'world', '历史上的今天', '📜', 'histGenStats');
+}
+
+/* ---------- 学科知识日历生成 ---------- */
+function generateThemeICS() {
+  const year = parseInt(document.getElementById('themeGenYear').value) || new Date().getFullYear();
+  const meta = THEME_META[currentTheme] || THEME_META.world;
+  generateICS(year, currentTheme, meta.name, meta.emoji, 'themeGenStats');
+}
+
+/* ---------- 我的订阅（localStorage） ---------- */
+function addSub(name, year, count) {
+  let subs = [];
+  try { subs = JSON.parse(localStorage.getItem('knowSubs') || '[]'); } catch (e) {}
+  subs.unshift({ name, year, count, date: new Date().toLocaleString('zh-CN') });
+  if (subs.length > 20) subs = subs.slice(0, 20);
+  try { localStorage.setItem('knowSubs', JSON.stringify(subs)); } catch (e) {}
+}
+
+function renderSubs() {
+  const list = document.getElementById('subsList');
+  let subs = [];
+  try { subs = JSON.parse(localStorage.getItem('knowSubs') || '[]'); } catch (e) {}
+  if (!subs.length) {
+    list.innerHTML = '<div class="know-empty">还没有生成过ICS。去「历史上的今天」或「学科知识」生成一个吧！</div>';
+    return;
+  }
+  list.innerHTML = subs.map((s, i) => `
+    <div class="know-sub-card">
+      <div class="know-sub-card-info">
+        <div class="know-sub-card-name">${s.name}（${s.year}）</div>
+        <div class="know-sub-card-meta">${s.count} 条事件 · 生成于 ${s.date}</div>
+      </div>
+      <div class="know-sub-card-actions">
+        <button class="btn-secondary btn-sm" onclick="removeSub(${i})">删除</button>
+      </div>
+    </div>`).join('');
+}
+
+function removeSub(idx) {
+  let subs = [];
+  try { subs = JSON.parse(localStorage.getItem('knowSubs') || '[]'); } catch (e) {}
+  subs.splice(idx, 1);
+  try { localStorage.setItem('knowSubs', JSON.stringify(subs)); } catch (e) {}
+  renderSubs();
+}
+
+function clearSubs() {
+  if (confirm('确定清空所有记录？已下载的ICS文件不会删除。')) {
+    localStorage.removeItem('knowSubs');
+    renderSubs();
+  }
+}
+
+/* ---------- 按日期浏览（Byabbe / 维基） ---------- */
+const KNOW_HIST_CACHE = {};
+function initKnowHistDate() {
+  const d = document.getElementById('knowHistDate');
+  if (!d.value) {
+    const n = new Date();
+    d.value = `${n.getFullYear()}-${pad2(n.getMonth() + 1)}-${pad2(n.getDate())}`;
+  }
+}
+function knowHistMD() {
+  const v = document.getElementById('knowHistDate').value;
+  let m, d;
+  if (v) { [_, m, d] = v.split('-'); }
+  else { const n = new Date(); m = pad2(n.getMonth() + 1); d = pad2(n.getDate()); }
+  return { m: String(+m), d: String(+d), m0: m, d0: d };
+}
+function typeLabel(t) {
+  return { events: '事件', births: '出生', deaths: '逝世' }[t] || t;
+}
+function stripHtml(s) { const d = document.createElement('div'); d.innerHTML = s; return d.textContent || ''; }
+
+async function loadKnowHist() {
+  initKnowHistDate();
+  const box = document.getElementById('knowHistResult');
+  const src = document.getElementById('knowHistSource').value;
+  const typ = document.getElementById('knowHistType').value;
+  const { m, d, m0, d0 } = knowHistMD();
+  box.innerHTML = '<div class="know-empty">加载中…</div>';
+  try {
+    let items = [];
+    if (src === 'byabbe') {
+      const types = typ === 'all' ? ['events', 'births', 'deaths'] : [typ];
+      for (const t of types) {
+        const k = `byabbe-${m}-${d}-${t}`;
+        let arr = KNOW_HIST_CACHE[k];
+        if (!arr) {
+          const r = await fetch(`https://byabbe.se/on-this-day/${m}/${d}/${t}.json`);
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const j = await r.json();
+          arr = (j[t] || []).map(x => ({ year: x.year, text: x.description, type: t, link: '' }));
+          KNOW_HIST_CACHE[k] = arr;
+        }
+        items = items.concat(arr);
+      }
+    } else if (src === 'zhwiki') {
+      const types = typ === 'all' ? ['events', 'births', 'deaths'] : [typ];
+      for (const tt of types) {
+        try {
+          const r = await fetch(`https://zh.wikipedia.org/api/rest_v1/feed/onthisday/${tt}/${m0}/${d0}`);
+          if (!r.ok) continue;
+          const j = await r.json();
+          (j[tt] || []).forEach(x => items.push({
+            year: x.year, text: x.text || '', type: tt,
+            link: (x.pages && x.pages[0] && x.pages[0].content_urls?.desktop?.page) || '',
+          }));
+        } catch (e) {}
+      }
+    }
+    if (!items.length) { box.innerHTML = '<div class="know-empty">这天没抓到内容，换来源或类型试试</div>'; return; }
+    items.sort((a, b) => String(a.year).localeCompare(String(b.year)));
+    box.innerHTML = items.slice(0, 30).map(it => `
+      <div class="nav-card">
+        <div class="nav-card-header"><div class="nav-card-title">${it.year} ｜ ${typeLabel(it.type)}</div></div>
+        <div class="nav-card-note">${escapeHtml(it.text || '')}</div>
+        <div class="nav-card-actions">
+          ${it.link ? `<a class="btn-secondary btn-sm" href="${it.link}" target="_blank" rel="noopener">🔗 维基</a>` : ''}
+          <button class="btn-primary btn-sm" onclick="addHistToExcel('${encodeURIComponent(it.year + ' ' + stripHtml(it.text || '').slice(0, 80))}')">＋加入日程</button>
+        </div>
+      </div>`).join('');
+  } catch (e) {
+    box.innerHTML = `<div class="result error">加载失败：${e.message}</div>`;
+  }
+}
+
+function randomKnowHist() {
+  const box = document.getElementById('knowHistResult');
+  const cards = box.querySelectorAll('.nav-card');
+  if (!cards.length) { loadKnowHist().then(randomKnowHist); return; }
+  cards.forEach(c => c.style.outline = '');
+  const i = Math.floor(Math.random() * cards.length);
+  cards[i].style.outline = '2px solid #7b1fa2';
+  cards[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function addHistToExcel(enc) {
+  const txt = decodeURIComponent(enc);
+  const { m, d } = knowHistMD();
+  const y = new Date().getFullYear();
+  if (!window._histPending) window._histPending = [];
+  window._histPending.push({
+    标题: '历史上的今天：' + txt.slice(0, 50),
+    日期: `${y}-${pad2(m)}-${pad2(d)}`,
+    时间: '12:00', 地点: '', 备注: txt,
+  });
+  if (typeof updatePendingBar === 'function') updatePendingBar();
+  if (typeof switchMainTab === 'function') switchMainTab('excel');
+}
+
+/* ---------- 通用提示 ---------- */
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;z-index:9999;';
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2600);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/* ============================================================
+ * Excel 转 ICS 引擎
+ * 读取用户在「📊 Excel转ICS」Tab 上传的表格，生成可导入日历的 ICS
+ * 依赖：SheetJS（XLSX），由 index.html 通过 CDN 引入
+ * ============================================================ */
+function excelParseDate(val) {
+  if (!val) return null;
+  if (val instanceof Date) return val;
+  if (typeof val === 'number') {
+    const d = new Date(Math.round((val - 25569) * 86400000));
+    if (!isNaN(d.getTime()) && d.getFullYear() > 1900 && d.getFullYear() < 9999) return d;
+  }
+  const s = String(val).trim();
+  const normalized = s.replace(/[年月]/g, '-').replace(/[日]/g, '').replace(/\//g, '-');
+  const d = new Date(normalized);
+  if (!isNaN(d.getTime())) return d;
+  return null;
+}
+
+function excelParseTime(val) {
+  if (!val) return null;
+  if (typeof val === 'number') {
+    const fraction = val % 1;
+    const totalMin = Math.round(fraction * 24 * 60);
+    return { hh: String(Math.floor(totalMin / 60)).padStart(2, '0'), mm: String(totalMin % 60).padStart(2, '0') };
+  }
+  const s = String(val).trim();
+  if (/^\d{3,4}$/.test(s)) {
+    if (s.length === 3) return { hh: s[0], mm: s.slice(1) };
+    if (s.length === 4) return { hh: s.slice(0, 2), mm: s.slice(2) };
+  }
+  const m = s.match(/(\d{1,2})[:：](\d{2})/);
+  if (m) return { hh: String(m[1]).padStart(2, '0'), mm: m[2] };
+  return null;
+}
+
+function excelGetVal(row, candidates) {
+  for (const c of candidates) {
+    const found = Object.keys(row).find(k => k.trim() === c);
+    if (found) return row[found];
+  }
+  return '';
+}
+
+function excelDownloadTemplate() {
+  const sample = [
+    ['标题', '日期', '时间', '地点', '备注'],
+    ['优甲乐 早餐前 2粒', '2026-09-24', '06:30', '', '空腹1小时'],
+    ['二甲双胍 早餐时 1粒', '2026-09-24', '07:00', '', '随餐'],
+    ['复诊 内分泌科', '2026-10-08', '09:00', '市医院3楼', '带病历本'],
+    ['交电费', '2026-09-30', '20:00', '', '别忘'],
+  ];
+  const makeCsv = () => '\uFEFF' + sample.map(r => r.join(',')).join('\r\n');
+  if (typeof XLSX !== 'undefined') {
+    try {
+      const ws = XLSX.utils.aoa_to_sheet(sample);
+      ws['!cols'] = [{ wch: 24 }, { wch: 14 }, { wch: 10 }, { wch: 16 }, { wch: 20 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '日程');
+      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = '日程模板.xlsx';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return;
+    } catch (e) { /* 降级到 CSV */ }
+  }
+  const blob = new Blob([makeCsv()], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = '日程模板.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function excelGenerate() {
+  const fileInput = document.getElementById('excelFile');
+  const alarmInput = document.getElementById('alarmMin');
+  const resultDiv = document.getElementById('excelResult');
+  const btn = document.getElementById('excelGenerateBtn');
+  const templateHint = document.getElementById('excelTemplateHint');
+
+  resultDiv.className = 'result-msg';
+
+  if (!fileInput.files.length) {
+    resultDiv.textContent = '❌ 请先选择Excel文件';
+    resultDiv.className = 'result-msg error';
+    return;
+  }
+  if (typeof XLSX === 'undefined') {
+    resultDiv.innerHTML = '❌ Excel解析库未加载，请检查网络连接后刷新页面。';
+    resultDiv.className = 'result-msg error';
+    return;
+  }
+
+  const alarmMin = parseInt(alarmInput.value) || 15;
+  btn.disabled = true;
+  btn.textContent = '生成中...';
+
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+      if (rows.length === 0) throw new Error('工作表中没有数据，请检查文件内容');
+
+      const firstRow = rows[0];
+      const keys = Object.keys(firstRow);
+      const requiredKeys = ['标题', '日期', '时间'];
+      const missingKeys = requiredKeys.filter(k => !keys.some(key => key.trim() === k));
+      if (missingKeys.length > 0) {
+        throw new Error(`缺少必要列：${missingKeys.join(', ')}。当前列名：${keys.join(', ')}`);
+      }
+
+      const events = [];
+      let uidBase = Date.now();
+      let skipped = 0;
+
+      rows.forEach((row) => {
+        const title = excelGetVal(row, ['标题']);
+        const dateRaw = excelGetVal(row, ['日期']);
+        const timeRaw = excelGetVal(row, ['时间']);
+        const location = excelGetVal(row, ['地点']);
+        const description = excelGetVal(row, ['备注']);
+
+        if (!title || !dateRaw || !timeRaw) { skipped++; return; }
+
+        const dateObj = excelParseDate(dateRaw);
+        const timeObj = excelParseTime(timeRaw);
+        if (!dateObj || !timeObj) { skipped++; return; }
+
+        const y = dateObj.getFullYear();
+        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const d = String(dateObj.getDate()).padStart(2, '0');
+        const dateStr = `${y}${m}${d}`;
+        const { hh, mm } = timeObj;
+        const dtstamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+
+        let ev = 'BEGIN:VEVENT\r\n';
+        ev += `UID:${uidBase++}@table2ics.local\r\n`;
+        ev += `DTSTAMP:${dtstamp}\r\n`;
+        ev += `DTSTART;TZID=Asia/Shanghai:${dateStr}T${hh}${mm}00\r\n`;
+        ev += `SUMMARY:${escapeForICS(title)}`;
+        if (description) ev += `\r\nDESCRIPTION:${escapeForICS(description)}`;
+        if (location) ev += `\r\nLOCATION:${escapeForICS(location)}`;
+        ev += `\r\nBEGIN:VALARM\r\nTRIGGER:-PT${alarmMin}M\r\nACTION:DISPLAY\r\nDESCRIPTION:提醒\r\nEND:VALARM\r\nEND:VEVENT`;
+
+        events.push(ev);
+      });
+
+      if (events.length === 0) {
+        throw new Error(`未生成任何事件。共 ${rows.length} 行数据，${skipped} 行因日期或时间格式无法解析而被跳过。建议：将"日期"和"时间"两列的单元格格式设为"文本"，再填写 2026-09-24 和 08:30`);
+      }
+
+      const icsContent = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Table2ICS//CN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n' + events.join('\r\n') + '\r\nEND:VCALENDAR';
+      const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const fileName = `日程_${new Date().toISOString().slice(0, 10)}.ics`;
+      a.download = fileName;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      const msg = `✅ 生成成功！共 ${events.length} 条事件${skipped > 0 ? `，${skipped} 行因格式问题跳过` : ''}。文件已下载：${fileName}`;
+      resultDiv.textContent = msg;
+      resultDiv.className = 'result-msg success';
+      if (templateHint) templateHint.textContent = msg;
+    } catch (err) {
+      resultDiv.textContent = '❌ ' + err.message;
+      resultDiv.className = 'result-msg error';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '生成 ICS 文件';
+    }
+  };
+  reader.readAsArrayBuffer(fileInput.files[0]);
+}
+
+/* ---------- 页面初始化 ---------- */
+/* ---------- 主Tab切换 ---------- */
+function switchMainTab(name, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  ['excel', 'know', 'nav'].forEach(n => {
+    document.getElementById('tab-' + n).classList.toggle('active', n === name);
+  });
+  if (name === 'know') {
+    switchKnowTab('hist', document.querySelector('.know-sub-tab.active') || document.querySelector('.know-sub-tab'));
+  }
+  if (name === 'excel') updatePendingBar();
+  if (name === 'nav') { renderNavList(); navBind(); pasteInit(); }
+}
+
+/* ---------- 待加入日程 ---------- */
+window._histPending = window._histPending || [];
+function updatePendingBar() {
+  const box = document.getElementById('pendingList');
+  if (!box) return;
+  if (!window._histPending.length) {
+    box.innerHTML = '<div class="know-empty">暂无待加入的日程</div>';
+    return;
+  }
+  box.innerHTML = window._histPending.map((it, i) => `
+    <div class="nav-card">
+      <div class="nav-card-title">${it['标题']}</div>
+      <div class="nav-card-note">${it['日期']} ${it['时间']} ｜ ${it['备注'] || ''}</div>
+    </div>`).join('');
+}
+
+/* ============================================================
+ * 赛程目录：ICS 源目录 + 自定义源 + 粘贴生成
+ * ============================================================ */
+const NAV_CATS = ["节假日", "教育", "天文", "体育", "自定义"];
+
+/* 内置源：url = .ics 或订阅链接；browse:true 表示仅提供官网入口（需站内生成 .ics）。
+   自托管源指向 github.com/zhangziluo/ics_maker（main 分支；raw 直连、CORS 开放，因此可一键下载）。 */
+const NAV_SOURCES = [
+  { id: "b0", name: "中国法定节假日", category: "节假日", region: "中国大陆", url: "https://www.officeholidays.com/ics/ics_country.php?tbl_country=China", desc: "中国法定节假日与调休安排（Office Holidays）", tags: ["节假日", "中国", "调休", "放假"] },
+  { id: "b1", name: "中国香港公众假期", category: "节假日", region: "中国香港", url: "https://www.officeholidays.com/ics/ics_country.php?tbl_country=Hong+Kong", desc: "香港公众假期（Office Holidays）", tags: ["节假日", "香港"] },
+  { id: "b2", name: "中国台湾节假日", category: "节假日", region: "中国台湾", url: "https://www.officeholidays.com/ics/ics_country.php?tbl_country=Taiwan", desc: "台湾地区节假日（Office Holidays）", tags: ["节假日", "台湾"] },
+  { id: "b3", name: "美国联邦节假日", category: "节假日", region: "美国", url: "https://www.officeholidays.com/ics/ics_country.php?tbl_country=United+States", desc: "美国联邦法定假日（Office Holidays）", tags: ["节假日", "美国"] },
+  { id: "b4", name: "日本节假日", category: "节假日", region: "日本", url: "https://www.officeholidays.com/ics/ics_country.php?tbl_country=Japan", desc: "日本法定节假日（Office Holidays）", tags: ["节假日", "日本"] },
+  { id: "b5", name: "新加坡节假日", category: "节假日", region: "新加坡", url: "https://www.officeholidays.com/ics/ics_country.php?tbl_country=Singapore", desc: "新加坡法定节假日（Office Holidays）", tags: ["节假日", "新加坡"] },
+  { id: "b6", name: "中国节假日（自托管）", category: "节假日", region: "中国大陆", url: "https://raw.githubusercontent.com/zhangziluo/ics_maker/main/ics/china-holidays.ics", alt: "https://cdn.jsdelivr.net/gh/zhangziluo/ics_maker@main/ics/china-holidays.ics", desc: "自托管：ics_maker 仓库 main 分支 ics/ 目录的 china-holidays.ics", tags: ["节假日", "中国", "自托管"] },
+  { id: "b7", name: "高考时间（自托管）", category: "教育", region: "中国大陆", url: "https://raw.githubusercontent.com/zhangziluo/ics_maker/main/ics/gaokao.ics", alt: "https://cdn.jsdelivr.net/gh/zhangziluo/ics_maker@main/ics/gaokao.ics", desc: "自托管：ics_maker 仓库 main 分支 ics/ 目录的 gaokao.ics", tags: ["教育", "高考", "考试"] },
+  { id: "b10", name: "中国法定节假日 · holiday-cn", category: "节假日", region: "中国大陆", url: "https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/holiday-cn.ics", alt: "https://cdn.jsdelivr.net/gh/NateScarlet/holiday-cn@master/holiday-cn.ics", desc: "含调休/补班；MIT 许可（NateScarlet/holiday-cn），可直接下载", tags: ["节假日", "中国", "调休", "补班"] },
+  { id: "b11", name: "中国节假日调休 · lanceliao", category: "节假日", region: "中国大陆", url: "https://raw.githubusercontent.com/lanceliao/china-holiday-calender/master/holidayCal.ics", alt: "https://cdn.jsdelivr.net/gh/lanceliao/china-holiday-calender@master/holidayCal.ics", desc: "含调休/补班；该仓库无 LICENSE，仅外链订阅，请勿复制文件", tags: ["节假日", "中国", "调休", "补班"] },
+  { id: "b12", name: "中国农历 · 节气 · 传统节日", category: "天文", region: "中国", url: "https://raw.githubusercontent.com/infinet/lunar-calendar/master/jieqi_tch_2017-01-01_2028-12-31.ics", alt: "https://cdn.jsdelivr.net/gh/infinet/lunar-calendar@master/jieqi_tch_2017-01-01_2028-12-31.ics", desc: "农历、二十四节气与传统节日（BSD-2-Clause，infinet/lunar-calendar，数据来自香港天文台）", tags: ["天文", "节气", "农历", "黄历"] },
+  { id: "b8", name: "月相 · WebCal.fi", category: "天文", region: "全球", browse: true, url: "https://www.webcal.fi/", desc: "月相、日出日落等天文日历（在站内生成 .ics 订阅）", tags: ["天文", "月相", "月亮"] },
+  { id: "b9", name: "足球赛程 · Fixtur.es", category: "体育", region: "全球", browse: true, url: "https://fixtur.es/", desc: "按球队订阅足球赛程（在站内选队生成 .ics）", tags: ["体育", "足球", "赛程"] },
+];
+
+let navList = [];
+let _navBound = false;
+function navCustom() {
+  try { return JSON.parse(localStorage.getItem("navCustomSources") || "[]"); } catch (e) { return []; }
+}
+function navSaveCustom(arr) {
+  try { localStorage.setItem("navCustomSources", JSON.stringify(arr)); } catch (e) {}
+}
+function navSources() { return NAV_SOURCES.concat(navCustom()); }
+function navWebcal(url) { return String(url).replace(/^https?:/, "webcal:"); }
+function navEsc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function navSetMsg(html, cls) {
+  const m = document.getElementById("navMsg");
+  if (m) { m.innerHTML = html; m.className = "result-msg " + (cls || ""); }
+}
+function renderNavList() {
+  const box = document.getElementById("navResults");
+  if (!box) return;
+  const input = document.getElementById("navSearch");
+  const q = (input && input.value ? input.value : "").trim().toLowerCase();
+  navList = navSources().filter(function (s) {
+    if (!q) return true;
+    const hay = (s.name + " " + s.category + " " + (s.region || "") + " " + (s.desc || "") + " " + ((s.tags || []).join(" "))).toLowerCase();
+    return hay.indexOf(q) >= 0;
+  });
+  if (!navList.length) {
+    box.innerHTML = `<div class="know-empty">没有匹配的 ICS 源，换个关键词试试</div>`;
+    navSetMsg("", "");
+    return;
+  }
+  const groups = {};
+  navList.forEach(function (s, i) { s.__i = i; (groups[s.category] = groups[s.category] || []).push(s); });
+  const order = NAV_CATS.filter(function (c) { return groups[c]; }).concat(Object.keys(groups).filter(function (c) { return NAV_CATS.indexOf(c) < 0; }));
+  box.innerHTML = order.map(function (cat) {
+    const items = groups[cat].map(function (s) {
+      const mirror = s.alt ? `<button class="src-act" data-act="copyalt" data-i="${s.__i}" title="复制 jsDelivr 镜像链接">🔁</button>` : "";
+      const acts = s.browse
+        ? `<button class="src-act" data-act="open" data-i="${s.__i}" title="打开官网">🔗</button>`
+        : `<button class="src-act" data-act="copy" data-i="${s.__i}" title="复制链接">🔗</button><button class="src-act" data-act="sub" data-i="${s.__i}" title="订阅（加入日历）">📅</button>` + mirror + `<button class="src-act dl" data-act="dl" data-i="${s.__i}" title="下载 ICS">⬇️</button>`;
+      const del = (s.id && s.id.charAt(0) === "c") ? `<button class="src-act del" data-act="del" data-i="${s.__i}" title="删除">✖</button>` : "";
+      return `<div class="src-item"><div class="src-info"><div class="src-name">${navEsc(s.name)}${s.region ? `<span class="src-region">${navEsc(s.region)}</span>` : ""}</div><div class="src-desc">${navEsc(s.desc || "")}</div><span class="src-cat">${navEsc(s.category)}</span></div><div class="src-acts">${acts}${del}</div></div>`;
+    }).join("");
+    return `<div class="src-group"><div class="src-group-title">${navEsc(cat)}<span class="src-group-count">${groups[cat].length}</span></div>${items}</div>`;
+  }).join("");
+  navSetMsg("共 " + navList.length + " 个 ICS 源", "success");
+}
+function navFind(i) { return navList[parseInt(i, 10)]; }
+function navOpen(url) { window.open(url, "_blank", "noopener"); }
+function navCopy(url) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(function () { navSetMsg(`✅ 已复制链接：<code>${navEsc(url)}</code>`, "success"); }, function () { navSetMsg(`复制失败，请手动复制：<code>${navEsc(url)}</code>`, "info"); });
+  } else {
+    navSetMsg(`请手动复制：<code>${navEsc(url)}</code>`, "info");
+  }
+}
+function navSubscribe(url) {
+  navSetMsg("📅 正在唤起日历订阅… 若没有反应，请用「🔗 复制链接」手动添加。", "info");
+  const a = document.createElement("a");
+  a.href = navWebcal(url);
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+async function navFetchIcs(url) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error("HTTP " + resp.status);
+  const text = await resp.text();
+  if (text.indexOf("BEGIN:VCALENDAR") < 0) throw new Error("返回内容不是 ICS");
+  return text;
+}
+async function navDownload(url, name, alt) {
+  navSetMsg(`⏳ 正在下载：${navEsc(name)} …`, "info");
+  try {
+    const text = await navFetchIcs(url);
+    downloadIcs(text, name + ".ics");
+    navSetMsg(`✅ 下载成功：${navEsc(name)}.ics`, "success");
+  } catch (err) {
+    if (alt) {
+      navSetMsg("↻ 直连失败，正在尝试 jsDelivr 镜像 …", "info");
+      try {
+        const text2 = await navFetchIcs(alt);
+        downloadIcs(text2, name + ".ics");
+        navSetMsg(`✅ 已通过 jsDelivr 镜像下载：${navEsc(name)}.ics`, "success");
+        return;
+      } catch (err2) { err = err2; }
+    }
+    navSetMsg(`⚠️ 下载失败（${navEsc(err.message)}）。请改用「🔗 复制链接」或「📅 订阅」，也可新标签打开：<a href="${navEsc(url)}" target="_blank" rel="noopener">${navEsc(url)}</a>`, "error");
+  }
+}
+function navAddCustom() {
+  const nEl = document.getElementById("navNewName");
+  const uEl = document.getElementById("navNewUrl");
+  const name = nEl && nEl.value ? nEl.value.trim() : "";
+  const url = uEl && uEl.value ? uEl.value.trim() : "";
+  if (!name || !url) { navSetMsg("❌ 请填写名称和 ICS 链接", "error"); return; }
+  const arr = navCustom();
+  arr.push({ id: "c" + Date.now(), name: name, category: "自定义", region: "", url: url, desc: "用户自定义源", tags: ["自定义"] });
+  navSaveCustom(arr);
+  if (nEl) nEl.value = "";
+  if (uEl) uEl.value = "";
+  renderNavList();
+  navSetMsg(`✅ 已添加自定义源：${navEsc(name)}`, "success");
+}
+function navDeleteCustom(id) {
+  navSaveCustom(navCustom().filter(function (s) { return s.id !== id; }));
+  renderNavList();
+}
+function navBind() {
+  if (_navBound) return;
+  _navBound = true;
+  document.addEventListener("click", function (e) {
+    const btn = e.target && e.target.closest ? e.target.closest(".src-act") : null;
+    if (!btn) return;
+    const s = navFind(btn.getAttribute("data-i"));
+    if (!s) return;
+    const act = btn.getAttribute("data-act");
+    if (act === "open") navOpen(s.url);
+    else if (act === "copy") navCopy(s.url);
+    else if (act === "sub") navSubscribe(s.url);
+    else if (act === "copyalt") navCopy(s.alt);
+    else if (act === "dl") navDownload(s.url, s.name, s.alt);
+    else if (act === "del") navDeleteCustom(s.id);
+  });
+}
+/* ---------- 粘贴生成 ICS（可编辑表格） ---------- */
+function pasteCells(tr) { return Array.prototype.slice.call(tr.children).filter(function (td) { return td.hasAttribute("contenteditable"); }); }
+function pasteDelRow(btn) { const tr = btn && btn.closest ? btn.closest("tr") : null; if (tr && tr.parentNode) tr.parentNode.removeChild(tr); }
+function pasteAddRow(vals) {
+  const tb = document.getElementById("pasteTbody");
+  if (!tb) return;
+  const tr = document.createElement("tr");
+  const v = vals || [];
+  for (let i = 0; i < 5; i++) {
+    const td = document.createElement("td");
+    td.setAttribute("contenteditable", "true");
+    td.textContent = v[i] || "";
+    tr.appendChild(td);
+  }
+  const op = document.createElement("td");
+  op.className = "paste-op";
+  const btn = document.createElement("button");
+  btn.className = "paste-del";
+  btn.setAttribute("title", "删除本行");
+  btn.textContent = "✖";
+  btn.addEventListener("click", function () { pasteDelRow(btn); });
+  op.appendChild(btn);
+  tr.appendChild(op);
+  tb.appendChild(tr);
+}
+function pasteClear() {
+  const tb = document.getElementById("pasteTbody");
+  if (tb) tb.innerHTML = "";
+  pasteAddRow(); pasteAddRow(); pasteAddRow();
+  const m = document.getElementById("pasteMsg");
+  if (m) m.textContent = "";
+}
+function pasteBindPaste() {
+  const tb = document.getElementById("pasteTbody");
+  if (!tb || tb.getAttribute("data-bound")) return;
+  tb.setAttribute("data-bound", "1");
+  tb.addEventListener("paste", function (e) {
+    const td = e.target && e.target.closest ? e.target.closest("td[contenteditable]") : null;
+    if (!td) return;
+    const dt = e.clipboardData || window.clipboardData;
+    const text = dt ? dt.getData("text") : "";
+    if (!text) return;
+    const TAB = String.fromCharCode(9), LF = String.fromCharCode(10), CR = String.fromCharCode(13);
+    const clean = text.split(CR).join("");
+    if (clean.indexOf(TAB) < 0 && clean.indexOf(LF) < 0) return;
+    e.preventDefault();
+    const grid = clean.split(LF).map(function (r) { return r.split(TAB); });
+    while (grid.length && grid[grid.length - 1].every(function (cc) { return !cc.trim(); })) grid.pop();
+    const tr0 = td.parentNode;
+    const c0 = pasteCells(tr0).indexOf(td);
+    let cur = tr0;
+    for (let r = 0; r < grid.length; r++) {
+      if (r > 0) { let nx = cur.nextElementSibling; if (!nx) { pasteAddRow(); nx = cur.nextElementSibling; } cur = nx; }
+      const tds = pasteCells(cur);
+      for (let c = 0; c < grid[r].length; c++) { const cell = tds[c0 + c]; if (cell) cell.textContent = grid[r][c].trim(); }
+    }
+  });
+}
+function pasteInit() {
+  const tb = document.getElementById("pasteTbody");
+  if (tb && !tb.children.length) { pasteAddRow(); pasteAddRow(); pasteAddRow(); }
+  pasteBindPaste();
+}
+function pasteGenerate() {
+  const tb = document.getElementById("pasteTbody");
+  const msg = document.getElementById("pasteMsg");
+  if (!tb) return;
+  const alarmEl = document.getElementById("pasteAlarm");
+  const alarmMin = parseInt(alarmEl && alarmEl.value) || 15;
+  const CRLF = String.fromCharCode(13, 10);
+  const events = [];
+  let uid = Date.now();
+  let skipped = 0;
+  Array.prototype.forEach.call(tb.children, function (tr) {
+    const tds = pasteCells(tr);
+    const title = (tds[0] ? tds[0].textContent : "").trim();
+    const dateRaw = (tds[1] ? tds[1].textContent : "").trim();
+    const timeRaw = (tds[2] ? tds[2].textContent : "").trim();
+    const loc = (tds[3] ? tds[3].textContent : "").trim();
+    const note = (tds[4] ? tds[4].textContent : "").trim();
+    if (!title && !dateRaw && !timeRaw) return;
+    if (!title || !dateRaw || !timeRaw) { skipped++; return; }
+    const dObj = excelParseDate(dateRaw);
+    const tObj = excelParseTime(timeRaw);
+    if (!dObj || !tObj) { skipped++; return; }
+    const y = dObj.getFullYear();
+    const mo = String(dObj.getMonth() + 1).padStart(2, "0");
+    const da = String(dObj.getDate()).padStart(2, "0");
+    const dtstamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
+    let ev = "BEGIN:VEVENT" + CRLF + "UID:" + (uid++) + "@paste2ics.local" + CRLF + "DTSTAMP:" + dtstamp + CRLF + "DTSTART;TZID=Asia/Shanghai:" + y + mo + da + "T" + tObj.hh + tObj.mm + "00" + CRLF + "SUMMARY:" + escapeForICS(title) + CRLF;
+    if (note) ev += "DESCRIPTION:" + escapeForICS(note) + CRLF;
+    if (loc) ev += "LOCATION:" + escapeForICS(loc) + CRLF;
+    ev += "BEGIN:VALARM" + CRLF + "TRIGGER:-PT" + alarmMin + "M" + CRLF + "ACTION:DISPLAY" + CRLF + "DESCRIPTION:提醒" + CRLF + "END:VALARM" + CRLF + "END:VEVENT";
+    events.push(ev);
+  });
+  if (!events.length) { if (msg) msg.textContent = "❌ 没有可生成的行（标题、日期、时间都要有；已跳过 " + skipped + " 行）"; return; }
+  const ics = "BEGIN:VCALENDAR" + CRLF + "VERSION:2.0" + CRLF + "PRODID:-//Paste2ICS//CN" + CRLF + "CALSCALE:GREGORIAN" + CRLF + "METHOD:PUBLISH" + CRLF + events.join(CRLF) + CRLF + "END:VCALENDAR";
+  downloadIcs(ics, "日程_" + new Date().toISOString().slice(0, 10) + ".ics");
+  if (msg) msg.textContent = "✅ 已生成 " + events.length + " 条事件" + (skipped ? "，跳过 " + skipped + " 行" : "");
+}
+
+
+document.addEventListener('DOMContentLoaded', () => {
+  initKnowHistDate();
+  renderSubs();
+  renderEthList();
+  renderNavList();
+  navBind();
+  pasteInit();
+});
+
+</script>
+</body>
+</html>
