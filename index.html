@@ -246,6 +246,32 @@
 
       <div id="excelResult" class="result-msg"></div>
 
+      <div class="know-gen" style="background:#f8f9fa;border-color:#e0e0e0;">
+        <h4 style="color:#333;">📝 直接粘贴 / 手填（可编辑表格）</h4>
+        <p class="know-gen-tip">没有 Excel 文件也能用：把日程文字直接粘进下面的表格，支持从 Excel / 网页复制（<strong>Tab 分列、换行分行</strong>）自动铺开，也可以逐格手填。填好后点「📥 生成 ICS」。</p>
+        <div style="overflow-x:auto;">
+          <table class="paste-table">
+            <thead><tr><th>标题</th><th>日期</th><th>时间</th><th>地点</th><th>备注</th><th></th></tr></thead>
+            <tbody id="pasteTbodyX"></tbody>
+          </table>
+        </div>
+        <div class="know-gen-row" style="margin-top:10px;">
+          <div style="flex:0 0 auto;display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn-secondary btn-sm" onclick="pasteAddRow(null, 'pasteTbodyX')">➕ 加一行</button>
+            <button class="btn-secondary btn-sm" onclick="pasteClear('pasteTbodyX')">🗑 清空</button>
+          </div>
+          <div style="flex:0 0 auto;max-width:130px;">
+            <label>提醒提前（分钟）</label>
+            <input type="number" id="pasteAlarmX" value="15" min="0" max="9999">
+          </div>
+          <div style="flex:0 0 auto;">
+            <button class="btn-purple btn-sm" onclick="pasteGenerate('pasteTbodyX')">📥 生成 ICS</button>
+          </div>
+        </div>
+        <div class="know-gen-stats" id="pasteMsgX"></div>
+        <p class="know-gen-tip" style="margin:8px 0 0;color:#7b1fa2;">ℹ️ 这张表与「🌐 赛程目录 → 📝 粘贴生成 ICS」是<strong>同一份数据</strong>：在哪边粘都一样，两边看到的内容保持一致。</p>
+      </div>
+
       <div class="tpl">
         <h5>📄 Excel 模板</h5>
         <p>表格需包含以下列（第一行为表头，顺序不限）：</p>
@@ -484,18 +510,19 @@
       </div>
       <div class="know-gen-row" style="margin-top:10px;">
         <div style="flex:0 0 auto;display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn-secondary btn-sm" onclick="pasteAddRow()">➕ 加一行</button>
-          <button class="btn-secondary btn-sm" onclick="pasteClear()">🗑 清空</button>
+          <button class="btn-secondary btn-sm" onclick="pasteAddRow(null, 'pasteTbody')">➕ 加一行</button>
+          <button class="btn-secondary btn-sm" onclick="pasteClear('pasteTbody')">🗑 清空</button>
         </div>
         <div style="flex:0 0 auto;max-width:130px;">
           <label>提醒提前（分钟）</label>
           <input type="number" id="pasteAlarm" value="15" min="0" max="9999">
         </div>
         <div style="flex:0 0 auto;">
-          <button class="btn-purple btn-sm" onclick="pasteGenerate()">📥 生成 ICS</button>
+          <button class="btn-purple btn-sm" onclick="pasteGenerate('pasteTbody')">📥 生成 ICS</button>
         </div>
       </div>
       <div class="know-gen-stats" id="pasteMsg"></div>
+      <p class="know-gen-tip" style="margin:8px 0 0;color:#7b1fa2;">ℹ️ 这张表与「📊 Excel转ICS → 📝 直接粘贴 / 手填」是<strong>同一份数据</strong>：在哪边粘都一样，两边看到的内容保持一致。</p>
     </div>
   </div>
 
@@ -2390,7 +2417,7 @@ function switchMainTab(name, el) {
   if (name === 'know') {
     switchKnowTab('hist', document.querySelector('.know-sub-tab.active') || document.querySelector('.know-sub-tab'));
   }
-  if (name === 'excel') updatePendingBar();
+  if (name === 'excel') { updatePendingBar(); pasteInit(); }
   if (name === 'nav') { renderNavList(); navBind(); pasteInit(); }
   if (name === 'rss') rssInit();
 }
@@ -2560,42 +2587,99 @@ function navBind() {
     else if (act === "del") navDeleteCustom(s.id);
   });
 }
-/* ---------- 粘贴生成 ICS（可编辑表格） ---------- */
-function pasteCells(tr) { return Array.prototype.slice.call(tr.children).filter(function (td) { return td.hasAttribute("contenteditable"); }); }
-function pasteDelRow(btn) { const tr = btn && btn.closest ? btn.closest("tr") : null; if (tr && tr.parentNode) tr.parentNode.removeChild(tr); }
-function pasteAddRow(vals) {
-  const tb = document.getElementById("pasteTbody");
-  if (!tb) return;
-  const tr = document.createElement("tr");
-  const v = vals || [];
-  for (let i = 0; i < 5; i++) {
-    const td = document.createElement("td");
-    td.setAttribute("contenteditable", "true");
-    td.textContent = v[i] || "";
-    tr.appendChild(td);
+/* ---------- 粘贴生成 ICS（可编辑表格）---------- 
+   两个 Tab（📊 Excel转ICS / 🌐 赛程目录）复用同一结构与**同一份数据**，只是渲染成两张表：
+   - 唯一真相是 pasteRows = [[标题,日期,时间,地点,备注], ...]
+   - 任一实例的编辑都写回模型；切换 Tab / 增删行 / 粘贴时重新渲染，两边始终一致
+   这样用户在哪个 Tab 都能直接粘，不会出现"我粘的那份去哪了"。 */
+const PASTE_COLS = 5;
+const PASTE_INSTANCES = [
+  { tbody: "pasteTbody", msg: "pasteMsg", alarm: "pasteAlarm", label: "赛程目录" },
+  { tbody: "pasteTbodyX", msg: "pasteMsgX", alarm: "pasteAlarmX", label: "Excel转ICS" }
+];
+let pasteRows = [];
+
+function pasteBlank() { return ["", "", "", "", ""]; }
+function pasteInst(tbodyId) {
+  for (let i = 0; i < PASTE_INSTANCES.length; i++) {
+    if (PASTE_INSTANCES[i].tbody === tbodyId) return PASTE_INSTANCES[i];
   }
-  const op = document.createElement("td");
-  op.className = "paste-op";
-  const btn = document.createElement("button");
-  btn.className = "paste-del";
-  btn.setAttribute("title", "删除本行");
-  btn.textContent = "✖";
-  btn.addEventListener("click", function () { pasteDelRow(btn); });
-  op.appendChild(btn);
-  tr.appendChild(op);
-  tb.appendChild(tr);
+  return PASTE_INSTANCES[0];
 }
-function pasteClear() {
-  const tb = document.getElementById("pasteTbody");
-  if (tb) tb.innerHTML = "";
-  pasteAddRow(); pasteAddRow(); pasteAddRow();
-  const m = document.getElementById("pasteMsg");
-  if (m) m.textContent = "";
+function pasteMsg(inst, text) {
+  const m = inst && document.getElementById(inst.msg);
+  if (m) m.textContent = text || "";
 }
-function pasteBindPaste() {
-  const tb = document.getElementById("pasteTbody");
+function pasteEnsureRows(n) {
+  while (pasteRows.length < n) pasteRows.push(pasteBlank());
+}
+function pasteSetCell(r, c, val) {
+  if (r < 0 || c < 0 || c >= PASTE_COLS) return;
+  pasteEnsureRows(r + 1);
+  pasteRows[r][c] = val == null ? "" : String(val);
+}
+function pasteRenderOne(inst) {
+  const tb = document.getElementById(inst.tbody);
+  if (!tb) return;
+  tb.innerHTML = pasteRows.map(function (row, r) {
+    let tds = "";
+    for (let c = 0; c < PASTE_COLS; c++) {
+      tds += '<td contenteditable="true" data-c="' + c + '">' + navEsc(row[c] || "") + "</td>";
+    }
+    return '<tr data-r="' + r + '">' + tds +
+      '<td class="paste-op"><button class="paste-del" data-del="' + r + '" title="删除本行">✖</button></td></tr>';
+  }).join("");
+}
+function pasteRenderAll() { PASTE_INSTANCES.forEach(pasteRenderOne); }
+/* 把 DOM 里的当前文本写回模型（用于"输入"事件；不重渲染，避免光标跳动） */
+function pasteSyncCell(td) {
+  const tr = td && td.parentNode;
+  if (!tr) return;
+  const r = parseInt(tr.getAttribute("data-r"), 10);
+  const c = parseInt(td.getAttribute("data-c"), 10);
+  if (isNaN(r) || isNaN(c)) return;
+  pasteSetCell(r, c, td.textContent || "");
+}
+function pasteAddRow(vals, tbodyId) {
+  pasteEnsureRows(pasteRows.length + 1);
+  if (vals && vals.length) {
+    const last = pasteRows.length - 1;
+    for (let c = 0; c < PASTE_COLS; c++) pasteRows[last][c] = vals[c] != null ? String(vals[c]) : "";
+  }
+  pasteRenderAll();
+  if (tbodyId) pasteMsg(pasteInst(tbodyId), "");
+}
+function pasteDelRow(btn) {
+  const tr = btn && btn.closest ? btn.closest("tr") : null;
+  const idx = tr ? parseInt(tr.getAttribute("data-r"), 10) : NaN;
+  if (isNaN(idx) || idx < 0 || idx >= pasteRows.length) return;
+  pasteRows.splice(idx, 1);
+  if (!pasteRows.length) pasteRows.push(pasteBlank());
+  pasteRenderAll();
+}
+function pasteClear(tbodyId) {
+  pasteRows = [pasteBlank(), pasteBlank(), pasteBlank()];
+  pasteRenderAll();
+  PASTE_INSTANCES.forEach(function (i) { pasteMsg(i, ""); });
+}
+function pasteBindPaste(tbodyId) {
+  const tb = document.getElementById(tbodyId);
   if (!tb || tb.getAttribute("data-bound")) return;
   tb.setAttribute("data-bound", "1");
+
+  /* 输入：只写回模型、不重渲染（否则光标会跳） */
+  tb.addEventListener("input", function (e) {
+    const td = e.target && e.target.closest ? e.target.closest("td[contenteditable]") : null;
+    if (td) pasteSyncCell(td);
+  });
+
+  /* 删除行（按钮由 pasteRenderOne 生成，data-del 带行号） */
+  tb.addEventListener("click", function (e) {
+    const btn = e.target && e.target.closest ? e.target.closest("[data-del]") : null;
+    if (btn) pasteDelRow(btn);
+  });
+
+  /* 粘贴：Tab 分列、换行分行，从当前格开始铺开（不够自动加行） */
   tb.addEventListener("paste", function (e) {
     const td = e.target && e.target.closest ? e.target.closest("td[contenteditable]") : null;
     if (!td) return;
@@ -2608,38 +2692,35 @@ function pasteBindPaste() {
     e.preventDefault();
     const grid = clean.split(LF).map(function (r) { return r.split(TAB); });
     while (grid.length && grid[grid.length - 1].every(function (cc) { return !cc.trim(); })) grid.pop();
-    const tr0 = td.parentNode;
-    const c0 = pasteCells(tr0).indexOf(td);
-    let cur = tr0;
+    const tr = td.parentNode;
+    const r0 = parseInt(tr.getAttribute("data-r"), 10);
+    const c0 = parseInt(td.getAttribute("data-c"), 10);
+    if (isNaN(r0) || isNaN(c0)) return;
     for (let r = 0; r < grid.length; r++) {
-      if (r > 0) { let nx = cur.nextElementSibling; if (!nx) { pasteAddRow(); nx = cur.nextElementSibling; } cur = nx; }
-      const tds = pasteCells(cur);
-      for (let c = 0; c < grid[r].length; c++) { const cell = tds[c0 + c]; if (cell) cell.textContent = grid[r][c].trim(); }
+      for (let c = 0; c < grid[r].length; c++) pasteSetCell(r0 + r, c0 + c, grid[r][c].trim());
     }
+    pasteRenderAll();
   });
 }
 function pasteInit() {
-  const tb = document.getElementById("pasteTbody");
-  if (tb && !tb.children.length) { pasteAddRow(); pasteAddRow(); pasteAddRow(); }
-  pasteBindPaste();
+  pasteEnsureRows(3);
+  PASTE_INSTANCES.forEach(function (i) { pasteBindPaste(i.tbody); });
+  pasteRenderAll();
 }
-function pasteGenerate() {
-  const tb = document.getElementById("pasteTbody");
-  const msg = document.getElementById("pasteMsg");
-  if (!tb) return;
-  const alarmEl = document.getElementById("pasteAlarm");
+function pasteGenerate(tbodyId) {
+  const inst = pasteInst(tbodyId);
+  const alarmEl = document.getElementById(inst.alarm);
   const alarmMin = parseInt(alarmEl && alarmEl.value) || 15;
   const CRLF = String.fromCharCode(13, 10);
   const events = [];
   let uid = Date.now();
   let skipped = 0;
-  Array.prototype.forEach.call(tb.children, function (tr) {
-    const tds = pasteCells(tr);
-    const title = (tds[0] ? tds[0].textContent : "").trim();
-    const dateRaw = (tds[1] ? tds[1].textContent : "").trim();
-    const timeRaw = (tds[2] ? tds[2].textContent : "").trim();
-    const loc = (tds[3] ? tds[3].textContent : "").trim();
-    const note = (tds[4] ? tds[4].textContent : "").trim();
+  pasteRows.forEach(function (row) {
+    const title = (row[0] || "").trim();
+    const dateRaw = (row[1] || "").trim();
+    const timeRaw = (row[2] || "").trim();
+    const loc = (row[3] || "").trim();
+    const note = (row[4] || "").trim();
     if (!title && !dateRaw && !timeRaw) return;
     if (!title || !dateRaw || !timeRaw) { skipped++; return; }
     const dObj = excelParseDate(dateRaw);
@@ -2655,10 +2736,11 @@ function pasteGenerate() {
     ev += "BEGIN:VALARM" + CRLF + "TRIGGER:-PT" + alarmMin + "M" + CRLF + "ACTION:DISPLAY" + CRLF + "DESCRIPTION:提醒" + CRLF + "END:VALARM" + CRLF + "END:VEVENT";
     events.push(ev);
   });
-  if (!events.length) { if (msg) msg.textContent = "❌ 没有可生成的行（标题、日期、时间都要有；已跳过 " + skipped + " 行）"; return; }
+  PASTE_INSTANCES.forEach(function (i) { pasteMsg(i, ""); });
+  if (!events.length) { pasteMsg(inst, "❌ 没有可生成的行（标题、日期、时间都要有；已跳过 " + skipped + " 行）"); return; }
   const ics = "BEGIN:VCALENDAR" + CRLF + "VERSION:2.0" + CRLF + "PRODID:-//Paste2ICS//CN" + CRLF + "CALSCALE:GREGORIAN" + CRLF + "METHOD:PUBLISH" + CRLF + events.join(CRLF) + CRLF + "END:VCALENDAR";
   downloadIcs(ics, "日程_" + new Date().toISOString().slice(0, 10) + ".ics");
-  if (msg) msg.textContent = "✅ 已生成 " + events.length + " 条事件" + (skipped ? "，跳过 " + skipped + " 行" : "");
+  pasteMsg(inst, "✅ 已生成 " + events.length + " 条事件" + (skipped ? "，跳过 " + skipped + " 行" : ""));
 }
 
 
