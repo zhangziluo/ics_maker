@@ -204,6 +204,12 @@
   }
   a.rss-sub-url { display: block; text-decoration: none; color: #1565c0; }
   .rss-sub-url:hover { border-color: #7b1fa2; }
+  .rss-feed-name {
+    width: 100%; border: 1px solid transparent; background: transparent;
+    padding: 1px 4px; margin: 0; font-size: 14px; font-weight: 500; border-radius: 4px;
+  }
+  .rss-feed-name:hover { border-color: #eee; }
+  .rss-feed-name:focus { outline: none; border-color: #7b1fa2; background: #fff; }
 </style>
 </head>
 <body>
@@ -611,17 +617,42 @@
     </div>
 
     <div class="know-gen">
-      <h4>⚡ 订阅预热 / 定时刷新</h4>
-      <p class="know-gen-tip">日历 App 来取数据时如果边缘缓存是冷的，就得现抓源站（慢，还可能被限速）。这里可以先把缓存热上。「真正的定时刷新」用仓库里的 GitHub Actions（<code>.github/workflows/warm-rss.yml</code>）——因为 <strong>Cloudflare Pages 不支持 cron</strong>。</p>
-
-      <label>要预热的订阅链接（每行一条，存在本机浏览器）</label>
-      <textarea id="rssWarmUrls" rows="3" placeholder="https://ics-maker.pages.dev/api/rss-to-ics?url=..."></textarea>
+      <h4>📚 我的订阅源（存在本机浏览器）</h4>
+      <p class="know-gen-tip">把「订阅地址 + 它的映射配置」整体存成一条，之后生成订阅链接、缓存预热都不用再手拼。数据只存在你这台设备的浏览器里，不上传、不同步。</p>
+      <div id="rssFeedList"></div>
+      <div class="know-gen-stats" id="rssFeedCount"></div>
 
       <div class="know-gen-row" style="margin-top:10px;">
         <div style="flex:0 0 auto;display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn-purple btn-sm" onclick="rssWarmNow()">⚡ 立即预热</button>
-          <button class="btn-secondary btn-sm" onclick="rssWarmFillCurrent()">➕ 填入当前链接</button>
-          <button class="btn-secondary btn-sm" onclick="rssWarmClear()">🗑 清空</button>
+          <button class="btn-purple btn-sm" onclick="rssFeedAddFromEditor()">➕ 保存当前为订阅源</button>
+          <button class="btn-secondary btn-sm" onclick="rssFeedCopySchedule()">📋 复制定时预热清单</button>
+          <button class="btn-secondary btn-sm" onclick="rssFeedExport()">⬆️ 导出备份</button>
+          <button class="btn-secondary btn-sm" onclick="rssFeedImportClick()">⬇️ 导入备份</button>
+          <button class="btn-secondary btn-sm" onclick="rssFeedClearAll()">🗑 清空列表</button>
+        </div>
+      </div>
+      <input type="file" id="rssFeedImportFile" accept=".json,application/json" style="display:none" onchange="rssFeedImportFile(this.files[0])">
+      <div class="know-gen-stats" id="rssFeedMsg"></div>
+
+      <details class="rss-cfg">
+        <summary>📄 备份 / 定时清单长什么样</summary>
+        <div style="font-size:12px;color:#666;line-height:1.9;margin-top:10px;">
+          <p><strong>⬆️ 导出备份</strong>：得到 <code>{ version, feeds: [{ name, url, tz, dur, title, uid, limit, remind, ev }] }</code>；换电脑 / 换浏览器时用「⬇️ 导入备份」恢复（按 url 合并，同名以导入为准）。</p>
+          <p><strong>📋 复制定时预热清单</strong>：得到 <code>{ "urls": [ ... ] }</code>，整段替换仓库里 <code>.github/warm-rss.json</code> 的内容即可 —— GitHub Actions 会按它每 2 小时自动预热。</p>
+          <p>列表每行的按钮：📥 载入到上面的编辑器 ｜ 📋 复制该源的订阅链接 ｜ 🧪 立刻测一下 ｜ 🗑 删除。名称可直接点着改。</p>
+        </div>
+      </details>
+    </div>
+
+    <div class="know-gen">
+      <h4>⚡ 订阅预热 / 定时刷新</h4>
+      <p class="know-gen-tip">日历 App 来取数据时如果边缘缓存是冷的，就得现抓源站（慢，还可能被限速）。这里可以先把缓存热上。「真正的定时刷新」用仓库里的 GitHub Actions（<code>.github/workflows/warm-rss.yml</code>）——因为 <strong>Cloudflare Pages 不支持 cron</strong>。</p>
+
+      <p class="know-gen-tip" style="margin-bottom:10px;">预热上面「📚 我的订阅源」里的<strong>全部</strong>订阅源：给每条链接加 <code>fresh=1</code> 打一次，强制刷新边缘缓存，日历 App 来取时就是热的。</p>
+      <div class="know-gen-row">
+        <div style="flex:0 0 auto;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn-purple btn-sm" onclick="rssWarmNow()">⚡ 全部预热</button>
+          <button class="btn-secondary btn-sm" onclick="rssFeedTestAll()">🧪 测试全部</button>
         </div>
       </div>
 
@@ -3125,6 +3156,78 @@ function rssGenerate() {
   if (msg) msg.textContent = "✅ 已生成 " + events.length + " 条事件" + (extra.length ? "；跳过 " + extra.join("、") : "");
 }
 
+/* ---------- 我的订阅源（localStorage：源 + 它自己的映射配置） ----------
+   目的：订阅链接与缓存预热都不用每次手拼。数据只在本机浏览器里。 */
+const RSS_FEEDS_KEY = "rssFeeds";
+const RSS_FEEDS_VER = 1;
+const RSS_FEED_LIMIT = 50;
+
+function rssFeedNewId() {
+  return "f" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+}
+function rssFeedHostName(url) {
+  try { return new URL(url).hostname; } catch (e) { return "订阅源"; }
+}
+function rssFeedList() {
+  let raw = null;
+  try { raw = localStorage.getItem(RSS_FEEDS_KEY); } catch (e) { raw = null; }
+  if (!raw) return [];
+  let arr = null;
+  try { arr = JSON.parse(raw); } catch (e) { arr = null; }
+  if (!Array.isArray(arr)) return [];
+  return arr.filter(function (f) { return f && typeof f.url === "string" && f.url; });
+}
+function rssFeedSaveList(list) {
+  try { localStorage.setItem(RSS_FEEDS_KEY, JSON.stringify(list)); } catch (e) { }
+}
+function rssFeedMsg(text) {
+  const m = document.getElementById("rssFeedMsg");
+  if (m) m.textContent = text || "";
+}
+/* 读当前编辑器里的映射配置 */
+function rssFeedCfgFromEditor() {
+  const durEl = document.getElementById("rssDuration");
+  const tplEl = document.getElementById("rssTitleTpl");
+  const uidEl = document.getElementById("rssUidPrefix");
+  return {
+    tz: rssCurrentTz(),
+    dur: (durEl && durEl.value) || "60",
+    title: (tplEl && tplEl.value) || "{title}",
+    uid: (((uidEl && uidEl.value) || "rss2ics").trim().replace(/^@/, "")) || "rss2ics",
+    limit: RSS_FEED_LIMIT,
+    remind: 0,
+    ev: true
+  };
+}
+function rssFeedCfgToEditor(c) {
+  const cfg = c || {};
+  const set = function (id, v) { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+  set("rssTimezone", rssSafeTz(cfg.tz));
+  set("rssDuration", cfg.dur || "60");
+  set("rssTitleTpl", cfg.title || "{title}");
+  set("rssUidPrefix", cfg.uid || "rss2ics");
+}
+/* 由「源 + 配置」拼订阅链接 —— 唯一入口，订阅卡片、订阅源列表、预热、定时清单都走这里 */
+function rssFeedSubUrl(feed) {
+  const base = rssSubBase();
+  const f = feed || {};
+  if (!base || !/^https?:\/\/.+/i.test(String(f.url || ""))) return "";
+  const params = new URLSearchParams();
+  params.set("url", f.url);
+  params.set("tz", rssSafeTz(f.tz));
+  params.set("dur", f.dur === "allday" ? "allday" : (f.dur || "60"));
+  params.set("limit", String(f.limit || RSS_FEED_LIMIT));
+  if (String(f.title || "").indexOf("{summary}") >= 0) params.set("title", "summary");
+  if (f.uid && f.uid !== "rss2ics") params.set("uid", f.uid);
+  if (f.remind > 0) params.set("remind", String(f.remind));
+  if (f.ev === false) params.set("ev", "0");
+  return base + "?" + params.toString();
+}
+function rssFeedSubWebcal(feed) {
+  const http = rssFeedSubUrl(feed);
+  return http ? http.replace(/^https?:/, "webcal:") : "";
+}
+
 /* ---------- webcal 订阅链接 ---------- */
 function rssSubBase() {
   try {
@@ -3136,22 +3239,10 @@ function rssBuildSubUrl() {
   const input = document.getElementById("rssUrl");
   const url = ((input && input.value) || "").trim();
   if (!/^https?:\/\/.+/i.test(url)) return null;
-  const base = rssSubBase();
-  if (!base) return null;
-  const durEl = document.getElementById("rssDuration");
-  const dur = (durEl && durEl.value) || "60";
-  const tplEl = document.getElementById("rssTitleTpl");
-  const tpl = (tplEl && tplEl.value) || "{title}";
-  const uidEl = document.getElementById("rssUidPrefix");
-  const uid = ((uidEl && uidEl.value) || "rss2ics").trim().replace(/^@/, "") || "rss2ics";
-  const params = new URLSearchParams();
-  params.set("url", url);
-  params.set("tz", rssCurrentTz());
-  params.set("dur", dur === "allday" ? "allday" : dur);
-  params.set("limit", "50");
-  if (tpl.indexOf("{summary}") >= 0) params.set("title", "summary");
-  if (uid !== "rss2ics") params.set("uid", uid);
-  return { http: base + "?" + params.toString() };
+  const cfg = rssFeedCfgFromEditor();
+  cfg.url = url;
+  const http = rssFeedSubUrl(cfg);
+  return http ? { http: http, feed: cfg } : null;
 }
 function rssBuildSub() {
   const box = document.getElementById("rssSubBox");
@@ -3237,50 +3328,266 @@ async function rssTestSub() {
   }
 }
 
+/* ---------- 我的订阅源：增删改 / 渲染 / 测试 ---------- */
+function rssFeedAddFromEditor() {
+  const input = document.getElementById("rssUrl");
+  const url = ((input && input.value) || "").trim();
+  if (!/^https?:\/\/.+/i.test(url)) { rssFeedMsg("❌ 请先在「RSS / Atom 订阅地址」里填一个以 http(s):// 开头的地址"); return; }
+  const cfg = rssFeedCfgFromEditor();
+  const list = rssFeedList();
+  let idx = -1;
+  for (let i = 0; i < list.length; i++) { if (list[i].url === url) { idx = i; break; } }
+  if (idx >= 0) {
+    list[idx] = Object.assign({}, list[idx], cfg);
+    rssFeedMsg("✅ 已更新「" + (list[idx].name || url) + "」的映射配置");
+  } else {
+    const entry = Object.assign({ id: rssFeedNewId(), name: rssFeedHostName(url), url: url, addedAt: Date.now() }, cfg);
+    list.push(entry);
+    rssFeedMsg("✅ 已保存「" + entry.name + "」（共 " + list.length + " 条）；名称可直接在列表里点着改");
+  }
+  rssFeedSaveList(list);
+  rssFeedRender();
+}
+function rssFeedRemove(id) {
+  const list = rssFeedList().filter(function (f) { return f.id !== id; });
+  rssFeedSaveList(list);
+  rssFeedRender();
+  rssFeedMsg("🗑 已删除（剩 " + list.length + " 条）");
+}
+function rssFeedClearAll() {
+  if (!rssFeedList().length) { rssFeedMsg("ℹ️ 列表本来就是空的"); return; }
+  rssFeedSaveList([]);
+  rssFeedRender();
+  rssFeedMsg("🗑 已清空订阅源列表");
+}
+function rssFeedLoad(id) {
+  const f = rssFeedList().filter(function (x) { return x.id === id; })[0];
+  if (!f) return;
+  const input = document.getElementById("rssUrl");
+  if (input) input.value = f.url;
+  rssFeedCfgToEditor(f);
+  rssFeedMsg("✅ 已把「" + (f.name || f.url) + "」载入上面的编辑器，点「🔍 解析」即可");
+}
+function rssFeedRename(id, name) {
+  const list = rssFeedList();
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].id === id) { list[i].name = String(name || "").slice(0, 40); break; }
+  }
+  rssFeedSaveList(list);
+  rssFeedRender();
+}
+function rssFeedSummary(f) {
+  const durTxt = f.dur === "allday" ? "全天" : (f.dur || "60") + " 分钟";
+  const tplTxt = String(f.title || "").indexOf("{summary}") >= 0 ? "标题+摘要" : "仅标题";
+  return [rssSafeTz(f.tz), durTxt, tplTxt, "上限 " + (f.limit || RSS_FEED_LIMIT),
+    f.ev === false ? "忽略 ev:" : "用 ev:"].join(" · ");
+}
+function rssFeedRender() {
+  const box = document.getElementById("rssFeedList");
+  if (!box) return;
+  const list = rssFeedList();
+  const cnt = document.getElementById("rssFeedCount");
+  if (cnt) cnt.textContent = list.length ? "共 " + list.length + " 条 · 只存在这台设备的浏览器里" : "";
+  if (!list.length) {
+    box.innerHTML = '<div class="know-empty">还没有保存的订阅源：填好上面的地址与「⚙️ 映射配置」，再点「➕ 保存当前为订阅源」。</div>';
+    return;
+  }
+  box.innerHTML = list.map(function (f) {
+    return '<div class="src-item" data-fid="' + navEsc(f.id) + '">' +
+      '<div class="src-info">' +
+      '<input class="rss-feed-name" data-act="rename" value="' + navEsc(f.name || "") + '" title="点这里可改名">' +
+      '<div class="src-desc">' + navEsc(rssFeedSummary(f)) + '</div>' +
+      '<div class="src-cat">' + navEsc(f.url) + '</div>' +
+      '</div>' +
+      '<div class="src-acts">' +
+      '<button class="src-act" data-act="load" title="载入到上面的编辑器">📥</button>' +
+      '<button class="src-act" data-act="copy" title="复制该源的 https 订阅链接">📋</button>' +
+      '<button class="src-act" data-act="test" title="测试该链接">🧪</button>' +
+      '<button class="src-act del" data-act="del" title="从列表删除">🗑</button>' +
+      '</div></div>';
+  }).join("");
+}
+function rssFeedBind() {
+  const box = document.getElementById("rssFeedList");
+  if (!box || box.getAttribute("data-bound")) return;
+  box.setAttribute("data-bound", "1");
+  box.addEventListener("click", function (e) {
+    const btn = e.target && e.target.closest ? e.target.closest("[data-act]") : null;
+    if (!btn) return;
+    const row = btn.closest ? btn.closest("[data-fid]") : null;
+    if (!row) return;
+    const id = row.getAttribute("data-fid");
+    const act = btn.getAttribute("data-act");
+    if (act === "load") rssFeedLoad(id);
+    else if (act === "copy") rssFeedCopySub(id);
+    else if (act === "test") rssFeedTestSub(id);
+    else if (act === "del") rssFeedRemove(id);
+  });
+  box.addEventListener("change", function (e) {
+    const el = e.target;
+    if (el && el.getAttribute && el.getAttribute("data-act") === "rename") {
+      const row = el.closest ? el.closest("[data-fid]") : null;
+      if (row) rssFeedRename(row.getAttribute("data-fid"), el.value);
+    }
+  });
+}
+function rssFeedCopySub(id) {
+  const f = rssFeedList().filter(function (x) { return x.id === id; })[0];
+  if (!f) return;
+  const http = rssFeedSubUrl(f);
+  if (!http) { rssFeedMsg("❌ 生成失败：请用线上地址打开本页（需要 /api/rss-to-ics）"); return; }
+  rssCopyText(http).then(
+    function () { rssFeedMsg("✅ 已复制「" + (f.name || f.url) + "」的 https 订阅链接（要 webcal 就把开头 https 换成 webcal）"); },
+    function () { rssFeedMsg("❌ 复制失败，请手动选中复制"); }
+  );
+}
+async function rssFeedTestSub(id) {
+  const f = rssFeedList().filter(function (x) { return x.id === id; })[0];
+  if (!f) return;
+  const http = rssFeedSubUrl(f);
+  if (!http) { rssFeedMsg("❌ 生成失败：请用线上地址打开本页"); return; }
+  rssFeedMsg("⏳ 正在测试「" + (f.name || f.url) + "」…");
+  const res = await rssWarmOne(http);
+  rssFeedMsg(res.ok
+    ? "✅ 「" + (f.name || f.url) + "」：" + res.events + " 条事件（缓存 " + res.cache + "）"
+    : "❌ 「" + (f.name || f.url) + "」：" + res.text);
+}
+async function rssFeedTestAll() {
+  const list = rssFeedList();
+  if (!list.length) { rssFeedMsg("❌ 列表是空的，先点「➕ 保存当前为订阅源」"); return; }
+  rssFeedMsg("⏳ 正在测试 " + list.length + " 条…");
+  const parts = [];
+  let okN = 0;
+  for (let i = 0; i < list.length; i++) {
+    const name = list[i].name || list[i].url;
+    const http = rssFeedSubUrl(list[i]);
+    if (!http) { parts.push("❌ " + name); continue; }
+    const res = await rssWarmOne(http);
+    if (res.ok) { okN++; parts.push("✅ " + name + "（" + res.events + "）"); }
+    else parts.push("❌ " + name + "：" + res.text);
+  }
+  rssFeedMsg("🧪 测试完成 " + okN + "/" + list.length + " ｜ " + parts.join(" ｜ "));
+}
+
+/* ---------- 我的订阅源：导出 / 导入 / 定时清单 / 旧数据迁移 ---------- */
+function rssFeedExportData() {
+  return JSON.stringify({ version: RSS_FEEDS_VER, exportedAt: new Date().toISOString(), feeds: rssFeedList() }, null, 2);
+}
+function rssFeedExport() {
+  const text = rssFeedExportData();
+  const blob = new Blob([text], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "rss订阅源_" + new Date().toISOString().slice(0, 10) + ".json";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  rssFeedMsg("⬆️ 已导出备份（" + rssFeedList().length + " 条）");
+}
+function rssFeedImportClick() {
+  const el = document.getElementById("rssFeedImportFile");
+  if (el) el.click();
+}
+function rssFeedImportFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function (e) { rssFeedMsg(rssFeedImportJson(String((e.target && e.target.result) || ""))); };
+  reader.onerror = function () { rssFeedMsg("❌ 读取文件失败"); };
+  reader.readAsText(file);
+}
+/* 纯函数（便于测试）：按 url 合并导入，已有的以导入内容为准 */
+function rssFeedImportJson(text) {
+  try {
+    const data = JSON.parse(String(text || ""));
+    const incoming = Array.isArray(data) ? data : ((data && data.feeds) || []);
+    const clean = incoming.filter(function (f) { return f && typeof f.url === "string" && f.url; })
+      .map(function (f) {
+        return {
+          id: f.id || rssFeedNewId(),
+          name: String(f.name || rssFeedHostName(f.url)).slice(0, 40),
+          url: f.url,
+          tz: rssSafeTz(f.tz),
+          dur: f.dur || "60",
+          title: f.title || "{title}",
+          uid: f.uid || "rss2ics",
+          limit: f.limit || RSS_FEED_LIMIT,
+          remind: f.remind || 0,
+          ev: f.ev !== false,
+          addedAt: f.addedAt || Date.now()
+        };
+      });
+    if (!clean.length) throw new Error("文件里没有可用的订阅源");
+    const byUrl = {};
+    rssFeedList().forEach(function (f) { byUrl[f.url] = f; });
+    clean.forEach(function (f) { byUrl[f.url] = f; });
+    const merged = Object.keys(byUrl).map(function (k) { return byUrl[k]; });
+    rssFeedSaveList(merged);
+    rssFeedRender();
+    return "✅ 已导入 " + clean.length + " 条，合并后共 " + merged.length + " 条";
+  } catch (e) {
+    return "❌ 导入失败：" + e.message;
+  }
+}
+/* 给 .github/warm-rss.json 用的清单（由订阅源现拼链接，不用手拼） */
+function rssFeedScheduleJson() {
+  const urls = rssFeedList().map(rssFeedSubUrl).filter(Boolean);
+  return JSON.stringify({
+    "_说明": "本文件供 .github/workflows/warm-rss.yml 使用：每 2 小时对每条加 &fresh=1 预热边缘缓存。由页面「📚 我的订阅源 → 📋 复制定时预热清单」生成。",
+    "urls": urls
+  }, null, 2);
+}
+function rssFeedCopySchedule() {
+  const list = rssFeedList();
+  if (!list.length) { rssFeedMsg("❌ 列表是空的，先「➕ 保存当前为订阅源」"); return; }
+  rssCopyText(rssFeedScheduleJson()).then(
+    function () { rssFeedMsg("✅ 已复制定时预热清单（" + list.length + " 条）：整段替换 .github/warm-rss.json 内容即可"); },
+    function () { rssFeedMsg("❌ 复制失败，请手动选中复制"); }
+  );
+}
+/* 把旧版「预热链接列表」迁移成订阅源（解析出 url + 参数） */
+function rssFeedMigrate() {
+  if (rssFeedList().length) return;
+  let old = [];
+  try { old = JSON.parse(localStorage.getItem("rssWarmUrls") || "[]") || []; } catch (e) { old = []; }
+  if (!Array.isArray(old) || !old.length) return;
+  const feeds = [];
+  old.forEach(function (u) {
+    if (typeof u !== "string" || !u) return;
+    let feedUrl = "";
+    const cfg = {};
+    try {
+      const q = new URL(u).searchParams;
+      feedUrl = q.get("url") || "";
+      if (q.get("tz")) cfg.tz = q.get("tz");
+      if (q.get("dur")) cfg.dur = q.get("dur");
+      if (q.get("title") === "summary") cfg.title = "{title} - {summary}";
+      if (q.get("uid")) cfg.uid = q.get("uid");
+      if (q.get("limit")) cfg.limit = parseInt(q.get("limit"), 10) || RSS_FEED_LIMIT;
+      if (q.get("remind")) cfg.remind = parseInt(q.get("remind"), 10) || 0;
+      if (q.get("ev") === "0") cfg.ev = false;
+    } catch (e) { return; }
+    if (!/^https?:\/\/.+/i.test(feedUrl)) return;
+    feeds.push(Object.assign({
+      id: rssFeedNewId(), name: rssFeedHostName(feedUrl), url: feedUrl,
+      tz: "Asia/Shanghai", dur: "60", title: "{title}", uid: "rss2ics",
+      limit: RSS_FEED_LIMIT, remind: 0, ev: true, addedAt: Date.now()
+    }, cfg));
+  });
+  if (!feeds.length) return;
+  rssFeedSaveList(feeds);
+  try { localStorage.removeItem("rssWarmUrls"); } catch (e) { }
+  rssFeedMsg("ℹ️ 已把旧的预热链接迁移成 " + feeds.length + " 条订阅源");
+}
+
 /* ---------- 订阅预热 / 定时刷新 ----------
    原理：带 fresh=1 请求端点 → 跳过读缓存、重新抓源站并回写缓存。
    注意：Cloudflare Pages 不支持 cron，所以"真定时"由 .github/workflows/warm-rss.yml 承担；
         页面上的自动预热只在标签页开着时生效。 */
-const RSS_WARM_KEY = "rssWarmUrls";
 let rssWarmTimer = null;
 
-function rssWarmEl() { return document.getElementById("rssWarmUrls"); }
-function rssWarmList() {
-  const el = rssWarmEl();
-  if (!el) return [];
-  return String(el.value || "").split("\n").map(function (s) { return s.trim(); }).filter(Boolean);
-}
-function rssWarmSave() {
-  try { localStorage.setItem(RSS_WARM_KEY, JSON.stringify(rssWarmList())); } catch (e) { }
-}
-function rssWarmLoad() {
-  const el = rssWarmEl();
-  if (!el || el.value.trim()) return;
-  let list = [];
-  try { list = JSON.parse(localStorage.getItem(RSS_WARM_KEY) || "[]") || []; } catch (e) { list = []; }
-  if (list.length) el.value = list.join("\n");
-}
 function rssWarmMsg(text) {
   const m = document.getElementById("rssWarmMsg");
   if (m) m.textContent = text || "";
-}
-function rssWarmFillCurrent() {
-  const el = rssWarmEl();
-  const built = rssBuildSubUrl();
-  if (!built) { rssWarmMsg("❌ 请先在上面填入订阅地址（或点「🔗 生成订阅链接」）"); return; }
-  const list = rssWarmList();
-  if (list.indexOf(built.http) >= 0) { rssWarmMsg("ℹ️ 当前链接已在预热列表里"); return; }
-  if (!el) return;
-  list.push(built.http);
-  el.value = list.join("\n");
-  rssWarmSave();
-  rssWarmMsg("✅ 已加入预热列表（共 " + list.length + " 条）");
-}
-function rssWarmClear() {
-  const el = rssWarmEl();
-  if (el) el.value = "";
-  rssWarmSave();
-  rssWarmMsg("");
 }
 /* 预热单条：加 fresh=1 强刷 */
 async function rssWarmOne(url) {
@@ -3296,22 +3603,28 @@ async function rssWarmOne(url) {
   return { ok: true, cache: r.headers.get("x-ics-cache") || "?", events: r.headers.get("x-ics-events") || "?" };
 }
 async function rssWarmNow(silent) {
-  const list = rssWarmList();
-  if (!list.length) { if (!silent) rssWarmMsg("❌ 预热列表是空的，先点「➕ 填入当前链接」"); return; }
-  if (!silent) rssWarmMsg("⏳ 正在预热 " + list.length + " 条…");
+  const feeds = rssFeedList();
+  if (!feeds.length) {
+    if (!silent) rssWarmMsg("❌ 还没有订阅源：先到上面「📚 我的订阅源」点「➕ 保存当前为订阅源」");
+    return;
+  }
+  if (!silent) rssWarmMsg("⏳ 正在预热 " + feeds.length + " 条…");
   let okN = 0;
   const parts = [];
-  for (let i = 0; i < list.length; i++) {
+  for (let i = 0; i < feeds.length; i++) {
+    const name = feeds[i].name || feeds[i].url;
+    const url = rssFeedSubUrl(feeds[i]);
+    if (!url) { parts.push("❌ " + name); continue; }
     try {
-      const res = await rssWarmOne(list[i]);
-      if (res.ok) { okN++; parts.push("✅ " + res.events + " 条/" + res.cache); }
-      else parts.push("❌ " + res.text);
+      const res = await rssWarmOne(url);
+      if (res.ok) { okN++; parts.push("✅ " + name + "（" + res.events + " 条/" + res.cache + "）"); }
+      else parts.push("❌ " + name + "：" + res.text);
     } catch (e) {
-      parts.push("❌ " + e.message);
+      parts.push("❌ " + name + "：" + e.message);
     }
   }
   const stamp = new Date().toTimeString().slice(0, 5);
-  rssWarmMsg((silent ? "🔄 自动预热 " : "⚡ 预热完成 ") + stamp + "：" + okN + "/" + list.length + " 成功 ｜ " + parts.join(" ｜ "));
+  rssWarmMsg((silent ? "🔄 自动预热 " : "⚡ 预热完成 ") + stamp + "：" + okN + "/" + feeds.length + " 成功 ｜ " + parts.join(" ｜ "));
 }
 function rssWarmStopAuto() {
   if (rssWarmTimer) { clearInterval(rssWarmTimer); rssWarmTimer = null; }
@@ -3334,7 +3647,9 @@ function rssWarmToggleAuto() {
 function rssInit() {
   rssPresetInit();
   rssInitRows();
-  rssWarmLoad();
+  rssFeedMigrate();
+  rssFeedRender();
+  rssFeedBind();
 }
 
 
