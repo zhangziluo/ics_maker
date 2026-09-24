@@ -2232,15 +2232,31 @@ function escapeHtml(s) {
  * 读取用户在「📊 Excel转ICS」Tab 上传的表格，生成可导入日历的 ICS
  * 依赖：SheetJS（XLSX），由 index.html 通过 CDN 引入
  * ============================================================ */
+/* 日期解析（Excel / 粘贴 / RSS 四条路径共用）
+   ⚠️ 关键：日期一律按「本地日期」理解，不能直接 new Date("2026-12-26") ——
+   那是 **UTC 午夜**，再用本地 getDate() 读会在 UTC 以西时区整体差一天。
+   同理 Excel 序列号要用 UTC 分量取出后再建成"本地日期"。 */
 function excelParseDate(val) {
   if (!val) return null;
   if (val instanceof Date) return val;
   if (typeof val === 'number') {
-    const d = new Date(Math.round((val - 25569) * 86400000));
+    /* Excel 序列号：整数部分=天数、小数部分=当天时间（25569 = 1970-01-01） */
+    const u = new Date(Math.round((val - 25569) * 86400000));
+    if (isNaN(u.getTime())) return null;
+    const d = new Date(u.getUTCFullYear(), u.getUTCMonth(), u.getUTCDate(),
+      u.getUTCHours(), u.getUTCMinutes(), u.getUTCSeconds());
     if (!isNaN(d.getTime()) && d.getFullYear() > 1900 && d.getFullYear() < 9999) return d;
+    return null;
   }
   const s = String(val).trim();
   const normalized = s.replace(/[年月]/g, '-').replace(/[日]/g, '').replace(/\//g, '-');
+  /* 纯日期（可选首尾空白）→ 按本地日期构造 */
+  const m = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})\s*$/);
+  if (m) {
+    const d = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+    if (!isNaN(d.getTime())) return d;
+  }
+  /* 其余（带时间、带时区、其它写法）交给 Date 解析 */
   const d = new Date(normalized);
   if (!isNaN(d.getTime())) return d;
   return null;
@@ -3203,18 +3219,10 @@ function rssHash36(s) {
   for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
   return h.toString(36);
 }
-/* 把 "YYYY-MM-DD" / "YYYY年M月D日" 等文本按**本地日期**解析：
-   new Date("2026-10-01") 会按 UTC 午夜解析，再用本地 getDate() 读会在 UTC 以西差一天。
-   其它格式（如 Excel 序列号）仍回退 excelParseDate。 */
-function rssParseLocalDate(raw) {
-  const s = String(raw || "").trim();
-  const m = s.match(/^(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})日?/);
-  if (m) {
-    const d = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
-    if (!isNaN(d.getTime())) return d;
-  }
-  return excelParseDate(raw);
-}
+/* 兼容旧调用名：日期解析已统一进 excelParseDate()
+   （它现在把"纯日期"按本地日期解析、把 Excel 序列号按 UTC 分量重建本地日期，
+   所以前面那条"UTC 以西差一天"的老问题在这四条路径上都不存在了）。 */
+function rssParseLocalDate(raw) { return excelParseDate(raw); }
 function rssYmd(d) { return "" + d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()); }
 function rssGenerate() {
   const tb = document.getElementById("rssTbody");
