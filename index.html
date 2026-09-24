@@ -179,6 +179,22 @@
   .paste-table td[contenteditable]:focus { outline: 2px solid #7b1fa2; background: #fffdf5; }
   .paste-table .paste-op { width: 34px; text-align: center; }
   .paste-del { background: none; color: #c62828; padding: 2px 6px; font-size: 13px; }
+
+  /* RSS 转 ICS */
+  .rss-preview { max-height: 320px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 4px 10px; background: #fff; }
+  .rss-item { display: flex; gap: 8px; align-items: flex-start; padding: 8px 0; border-bottom: 1px dashed #eee; font-size: 12px; cursor: pointer; }
+  .rss-item:last-child { border-bottom: none; }
+  .rss-item input[type="checkbox"] { width: auto; flex: 0 0 auto; margin: 3px 0 0; }
+  .rss-item-body { flex: 1; min-width: 0; }
+  .rss-item-title { display: block; font-weight: 600; color: #333; word-break: break-word; }
+  .rss-item-meta { display: block; color: #999; font-size: 11px; margin-top: 2px; }
+  .rss-item-meta.rss-item-warn { color: #c62828; }
+  .rss-presets { margin-top: 12px; }
+  .rss-preset-title { font-size: 12px; font-weight: 600; color: #666; margin-bottom: 6px; }
+  .rss-cfg { margin-top: 12px; padding: 12px; background: #f8f9fa; border-radius: 8px; }
+  .rss-cfg > summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #7b1fa2; }
+  .rss-cfg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  @media (max-width: 600px) { .rss-cfg-grid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -190,6 +206,7 @@
     <div class="tab active" onclick="switchMainTab('excel', this)">📊 Excel转ICS</div>
     <div class="tab" onclick="switchMainTab('know', this)">🧠 知识科普</div>
     <div class="tab" onclick="switchMainTab('nav', this)">🌐 赛程目录</div>
+    <div class="tab" onclick="switchMainTab('rss', this)">📡 RSS转ICS</div>
   </div>
 
   <!-- ========== Tab 1: Excel转ICS ========== -->
@@ -464,6 +481,93 @@
         </div>
       </div>
       <div class="know-gen-stats" id="pasteMsg"></div>
+    </div>
+  </div>
+
+  <!-- ========== Tab 4: RSS转ICS ========== -->
+  <div id="tab-rss" class="tab-content">
+    <div class="know-gen">
+      <h4>📡 从 RSS / Atom 订阅生成 ICS</h4>
+      <p class="know-gen-tip">输入 RSS / Atom 订阅地址，抓取文章列表作为日程候选，预填进下方可编辑表格；改好后一键导出 ICS。支持 RSS 2.0 与 Atom 1.0。</p>
+
+      <label>RSS / Atom 订阅地址</label>
+      <div class="know-gen-row" style="margin-top:4px;">
+        <div><input type="text" id="rssUrl" placeholder="https://sspai.com/feed"></div>
+        <div style="flex:0 0 auto;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn-purple btn-sm" id="rssParseBtn" onclick="rssParse()">🔍 解析</button>
+          <button class="btn-secondary btn-sm" onclick="rssClearAll()">🗑 清空</button>
+        </div>
+      </div>
+
+      <div class="rss-presets">
+        <div class="rss-preset-title">预设源快捷填入：</div>
+        <div id="rssPresetList"></div>
+      </div>
+
+      <div id="rssMsg" class="result-msg" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="know-gen" id="rssPreviewBox" style="display:none;">
+      <h4>📋 解析结果预览（前 10 条）</h4>
+      <p class="know-gen-tip" id="rssPreviewMeta"></p>
+      <div class="rss-preview" id="rssPreview"></div>
+      <div class="know-gen-row" style="margin-top:10px;">
+        <div style="flex:0 0 auto;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn-purple btn-sm" onclick="rssAddAll()">➕ 全部加入表格</button>
+          <button class="btn-secondary btn-sm" onclick="rssAddSelected()">✅ 逐条选择加入</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="know-gen">
+      <h4>✏️ 可编辑表格（预填后可改）</h4>
+      <p class="know-gen-tip">从预览加入的行会填在这里。可直接修改任意单元格、删掉不需要的行，或手动添加额外行。标题 / 日期必填；非「全天」模式下时间也必填。</p>
+      <div style="overflow-x:auto;">
+        <table class="paste-table">
+          <thead><tr><th>标题</th><th>日期</th><th>时间</th><th>地点</th><th>描述</th><th>链接</th><th>提醒(分)</th><th></th></tr></thead>
+          <tbody id="rssTbody"></tbody>
+        </table>
+      </div>
+      <div class="know-gen-row" style="margin-top:10px;">
+        <div style="flex:0 0 auto;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn-secondary btn-sm" onclick="rssAddRow()">➕ 手动添加行</button>
+          <button class="btn-secondary btn-sm" onclick="rssClearTable()">🗑 清空表格</button>
+        </div>
+        <div style="flex:0 0 auto;">
+          <button class="btn-purple btn-sm" onclick="rssGenerate()">📥 导出 ICS</button>
+        </div>
+      </div>
+      <div class="know-gen-stats" id="rssTableMsg"></div>
+
+      <details class="rss-cfg">
+        <summary>⚙️ 映射配置（可选）</summary>
+        <div class="rss-cfg-grid">
+          <div>
+            <label>标题模板</label>
+            <select id="rssTitleTpl">
+              <option value="{title}">仅标题 {title}</option>
+              <option value="{title} - {summary}">标题 + 摘要前 20 字</option>
+            </select>
+          </div>
+          <div>
+            <label>默认事件时长</label>
+            <select id="rssDuration">
+              <option value="30">30 分钟</option>
+              <option value="60" selected>1 小时</option>
+              <option value="120">2 小时</option>
+              <option value="allday">全天（不显示时间）</option>
+            </select>
+          </div>
+          <div>
+            <label>时区（覆盖 pubDate 原始时区）</label>
+            <input type="text" id="rssTimezone" value="Asia/Shanghai">
+          </div>
+          <div>
+            <label>UID 前缀</label>
+            <input type="text" id="rssUidPrefix" value="rss2ics">
+          </div>
+        </div>
+      </details>
     </div>
   </div>
 
@@ -2166,7 +2270,7 @@ function excelGenerate() {
 function switchMainTab(name, el) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
-  ['excel', 'know', 'nav'].forEach(n => {
+  ['excel', 'know', 'nav', 'rss'].forEach(n => {
     document.getElementById('tab-' + n).classList.toggle('active', n === name);
   });
   if (name === 'know') {
@@ -2174,6 +2278,7 @@ function switchMainTab(name, el) {
   }
   if (name === 'excel') updatePendingBar();
   if (name === 'nav') { renderNavList(); navBind(); pasteInit(); }
+  if (name === 'rss') rssInit();
 }
 
 /* ---------- 待加入日程 ---------- */
@@ -2443,6 +2548,429 @@ function pasteGenerate() {
 }
 
 
+/* ============================================================
+ * RSS / Atom → ICS：抓取 → 解析 → 预填可编辑表格 → 导出
+ * 代理：/api/rss-proxy（Cloudflare Pages Function，见 functions/api/rss-proxy.js）
+ *       代理不可用（GitHub Pages / 本地打开）时自动降级为前端直连 fetch
+ * ============================================================ */
+const RSS_PRESETS = [
+  { name: "少数派", type: "博客", url: "https://sspai.com/feed" },
+  { name: "阮一峰周刊", type: "博客", url: "https://www.ruanyifeng.com/blog/atom.xml" },
+  { name: "Hacker News", type: "技术", url: "https://hnrss.org/frontpage" },
+  { name: "GitHub Releases", type: "技术", url: "https://github.com/vuejs/core/releases.atom" }
+];
+const RSS_PREVIEW_LIMIT = 10;
+let rssParsed = [];
+
+/* 取节点下第一个有内容的指定子元素文本 */
+function rssChildText(node, names) {
+  for (let i = 0; i < names.length; i++) {
+    const el = node.querySelector(names[i]);
+    if (el && (el.textContent || "").trim()) return el.textContent.trim();
+  }
+  return "";
+}
+
+/* 日期字段：先试常见标签，再回退按 localName 匹配（兼容带命名空间的元素） */
+function rssFindDate(node) {
+  const prefer = ["pubDate", "published", "updated", "date"];
+  for (let i = 0; i < prefer.length; i++) {
+    const el = node.querySelector(prefer[i]);
+    if (el && (el.textContent || "").trim()) return el.textContent.trim();
+  }
+  const kids = node.getElementsByTagName("*");
+  for (let j = 0; j < kids.length; j++) {
+    const ln = (kids[j].localName || "").toLowerCase();
+    if (ln === "pubdate" || ln === "published" || ln === "updated" || ln === "date" || ln === "issued") {
+      const t = (kids[j].textContent || "").trim();
+      if (t) return t;
+    }
+  }
+  return "";
+}
+
+/* RSS 2.0 + Atom 1.0 → 统一的可编辑行对象 */
+function parseFeed(xmlText) {
+  const doc = new DOMParser().parseFromString(xmlText, "text/xml");
+  if (doc.querySelector("parsererror")) throw new Error("XML 解析失败：返回内容不是有效的 RSS / Atom");
+  const isAtom = doc.querySelector("feed") !== null;
+  const nodes = isAtom ? doc.querySelectorAll("entry") : doc.querySelectorAll("item");
+  if (!nodes.length) throw new Error("未解析到任何条目：可能不是 RSS/Atom，或该订阅源为空");
+
+  return Array.from(nodes).map(function (node, i) {
+    let title, link, summary, id;
+    if (isAtom) {
+      title = rssChildText(node, ["title"]);
+      const links = node.querySelectorAll("link");
+      link = "";
+      for (let k = 0; k < links.length; k++) {
+        const rel = links[k].getAttribute("rel");
+        const href = links[k].getAttribute("href");
+        if (href && (!rel || rel === "alternate")) { link = href; break; }
+        if (href && !link) link = href;
+      }
+      if (!link) link = rssChildText(node, ["id"]);
+      summary = rssChildText(node, ["summary", "content"]);
+      id = rssChildText(node, ["id"]);
+    } else {
+      title = rssChildText(node, ["title"]);
+      link = rssChildText(node, ["link"]);
+      summary = rssChildText(node, ["description", "summary", "content"]);
+      id = rssChildText(node, ["guid"]);
+    }
+    const published = rssFindDate(node);
+    if (!id) id = link || title || "";
+
+    // 日期解析（失败留空，不阻断其他行）
+    let startDate = "", startTime = "";
+    if (published) {
+      const d = new Date(published);
+      if (!isNaN(d.getTime())) {
+        startDate = d.toISOString().slice(0, 10);
+        startTime = d.toISOString().slice(11, 16);
+      }
+    }
+    // 描述清洗：去 HTML 标签、压空白、截断 300 字
+    let description = "";
+    if (summary) {
+      const tmp = document.createElement("div");
+      tmp.innerHTML = summary;
+      description = (tmp.textContent || "").replace(/\s+/g, " ").trim().slice(0, 300);
+    }
+    // UID：基于条目 id 的稳定哈希
+    let uid = "";
+    try { uid = btoa(encodeURIComponent(id || "")).replace(/=/g, "").slice(0, 32); } catch (e) { uid = ""; }
+    if (!uid) uid = "rss-auto-" + i;
+
+    return {
+      title: title || "无标题",
+      startDate: startDate,
+      startTime: startTime,
+      timezone: "Asia/Shanghai",
+      location: "",
+      description: description,
+      sourceUrl: link || "",
+      reminder: 30,
+      uid: uid
+    };
+  });
+}
+
+/* 抓取：优先代理，失败自动直连（GitHub Pages / 本地打开时降级） */
+async function rssFetchXml(url) {
+  const errs = [];
+  try {
+    const r = await fetch("/api/rss-proxy?url=" + encodeURIComponent(url), { headers: { Accept: "application/json, text/xml, */*" } });
+    const ct = (r.headers.get("content-type") || "").toLowerCase();
+    if (r.ok) {
+      if (ct.indexOf("json") >= 0) {
+        const data = await r.json();
+        if (data && data.xml && String(data.xml).indexOf("<") >= 0) return { xml: data.xml, via: "代理" };
+        errs.push((data && data.error) || "代理返回为空");
+      } else {
+        const t = await r.text();
+        if (t && t.indexOf("<") >= 0) return { xml: t, via: "代理" };
+        errs.push("代理返回非 XML");
+      }
+    } else {
+      errs.push("代理 HTTP " + r.status);
+    }
+  } catch (e) { errs.push("代理不可用：" + e.message); }
+
+  try {
+    const r2 = await fetch(url, { headers: { Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*" } });
+    if (!r2.ok) throw new Error("HTTP " + r2.status);
+    const t2 = await r2.text();
+    if (!t2 || t2.indexOf("<") < 0) throw new Error("返回内容不是 XML");
+    return { xml: t2, via: "直连" };
+  } catch (e2) {
+    throw new Error("抓取失败 —— 代理：" + (errs.join("；") || "无") + "；直连：" + e2.message +
+      "。若因跨域被拦，请把 functions/api/rss-proxy.js 部署到 Cloudflare Pages 后重试。");
+  }
+}
+
+/* ---------- 消息 / 预览 ---------- */
+function rssSetMsg(text, cls) {
+  const m = document.getElementById("rssMsg");
+  if (!m) return;
+  m.textContent = text || "";
+  m.className = "result-msg" + (cls ? " " + cls : "");
+}
+function rssRenderPreview() {
+  const box = document.getElementById("rssPreview");
+  const meta = document.getElementById("rssPreviewMeta");
+  if (!box) return;
+  const top = rssParsed.slice(0, RSS_PREVIEW_LIMIT);
+  if (meta) meta.textContent = "共解析 " + rssParsed.length + " 条，下方显示前 " + top.length + " 条（勾选后可「逐条选择加入」）";
+  box.innerHTML = top.map(function (it, i) {
+    const bad = !it.startDate;
+    const when = bad ? "⚠️ 日期解析失败（加入后可手动填）" : (it.startDate + " " + (it.startTime || ""));
+    return '<label class="rss-item">' +
+      '<input type="checkbox" data-rss-idx="' + i + '" checked>' +
+      '<span class="rss-item-body">' +
+      '<span class="rss-item-title">' + navEsc(it.title) + '</span>' +
+      '<span class="rss-item-meta' + (bad ? " rss-item-warn" : "") + '">' + navEsc(when) + '</span>' +
+      '</span></label>';
+  }).join("") || '<div class="know-empty">无条目</div>';
+}
+
+/* ---------- 预设源 ---------- */
+function rssPresetInit() {
+  const box = document.getElementById("rssPresetList");
+  if (!box) return;
+  box.innerHTML = RSS_PRESETS.map(function (p, i) {
+    return '<button class="know-preset-btn" onclick="rssUsePreset(' + i + ')">' + navEsc(p.name) + '（' + navEsc(p.type) + '）</button>';
+  }).join("") + '<button class="know-preset-btn" onclick="rssUsePreset(-1)">＋ 自定义</button>';
+}
+function rssUsePreset(idx) {
+  const input = document.getElementById("rssUrl");
+  if (!input) return;
+  if (idx < 0) {
+    input.value = "";
+    input.placeholder = "在此粘贴你自己的 RSS / Atom 地址";
+    input.focus();
+    return;
+  }
+  const p = RSS_PRESETS[idx];
+  if (p) { input.value = p.url; input.focus(); }
+}
+
+/* ---------- 解析主流程 ---------- */
+async function rssParse() {
+  const input = document.getElementById("rssUrl");
+  const btn = document.getElementById("rssParseBtn");
+  const box = document.getElementById("rssPreviewBox");
+  const url = ((input && input.value) || "").trim();
+  rssSetMsg("", "");
+  if (box) box.style.display = "none";
+  if (!/^https?:\/\/.+/i.test(url)) { rssSetMsg("❌ 请输入以 http:// 或 https:// 开头的订阅地址", "error"); return; }
+  if (btn) { btn.disabled = true; btn.textContent = "解析中..."; }
+  rssSetMsg("⏳ 正在抓取并解析…", "info");
+  try {
+    const got = await rssFetchXml(url);
+    rssParsed = parseFeed(got.xml);
+    const bad = rssParsed.filter(function (it) { return !it.startDate; }).length;
+    rssRenderPreview();
+    if (box) box.style.display = "block";
+    rssSetMsg("✅ 通过" + got.via + "获取成功：共 " + rssParsed.length + " 条" +
+      (bad ? "，其中 " + bad + " 条日期无法解析（已标红，加入后可手动改）" : ""), "success");
+  } catch (e) {
+    rssParsed = [];
+    rssSetMsg("❌ " + e.message, "error");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "🔍 解析"; }
+  }
+}
+
+/* ---------- 表格行操作 ---------- */
+function rssCells(tr) {
+  return Array.prototype.slice.call(tr.children).filter(function (td) { return td.hasAttribute("contenteditable"); });
+}
+function rssDelRow(btn) {
+  const tr = btn && btn.closest ? btn.closest("tr") : null;
+  if (tr && tr.parentNode) tr.parentNode.removeChild(tr);
+}
+function rssAddRow(vals) {
+  const tb = document.getElementById("rssTbody");
+  if (!tb) return;
+  const v = vals || [];
+  const tr = document.createElement("tr");
+  for (let i = 0; i < 7; i++) {
+    const td = document.createElement("td");
+    td.setAttribute("contenteditable", "true");
+    td.textContent = v[i] != null ? String(v[i]) : "";
+    tr.appendChild(td);
+  }
+  const op = document.createElement("td");
+  op.className = "paste-op";
+  const btn = document.createElement("button");
+  btn.className = "paste-del";
+  btn.setAttribute("title", "删除本行");
+  btn.textContent = "✖";
+  btn.addEventListener("click", function () { rssDelRow(btn); });
+  op.appendChild(btn);
+  tr.appendChild(op);
+  tb.appendChild(tr);
+}
+function rssInitRows() {
+  const tb = document.getElementById("rssTbody");
+  if (tb && !tb.children.length) { rssAddRow(); rssAddRow(); }
+}
+function rssClearTable() {
+  const tb = document.getElementById("rssTbody");
+  if (tb) tb.innerHTML = "";
+  const m = document.getElementById("rssTableMsg");
+  if (m) m.textContent = "";
+}
+function rssClearAll() {
+  const input = document.getElementById("rssUrl");
+  if (input) { input.value = ""; input.placeholder = "https://sspai.com/feed"; }
+  const pv = document.getElementById("rssPreview");
+  if (pv) pv.innerHTML = "";
+  const box = document.getElementById("rssPreviewBox");
+  if (box) box.style.display = "none";
+  rssParsed = [];
+  rssSetMsg("", "");
+  rssClearTable();
+  rssInitRows();
+}
+/* 清掉完全空白的占位行 */
+function rssRemoveEmptyRows() {
+  const tb = document.getElementById("rssTbody");
+  if (!tb) return;
+  Array.prototype.slice.call(tb.children).forEach(function (tr) {
+    const empty = rssCells(tr).every(function (td) { return !(td.textContent || "").trim(); });
+    if (empty && tr.parentNode) tr.parentNode.removeChild(tr);
+  });
+}
+function rssRowValuesFromItem(it) {
+  const tplEl = document.getElementById("rssTitleTpl");
+  const tpl = (tplEl && tplEl.value) || "{title}";
+  let title = it.title || "无标题";
+  if (tpl.indexOf("{summary}") >= 0) {
+    const s = (it.description || "").slice(0, 20);
+    if (s) title = title + " - " + s;
+  }
+  return [title, it.startDate || "", it.startTime || "", it.location || "",
+    it.description || "", it.sourceUrl || "", it.reminder != null ? it.reminder : 30];
+}
+function rssAddItems(list) {
+  if (!list.length) return 0;
+  rssRemoveEmptyRows();
+  list.forEach(function (it) { rssAddRow(rssRowValuesFromItem(it)); });
+  return list.length;
+}
+function rssAddAll() {
+  const m = document.getElementById("rssTableMsg");
+  if (!rssParsed.length) { if (m) m.textContent = "❌ 还没有解析结果，请先点「解析」"; return; }
+  const n = rssAddItems(rssParsed);
+  if (m) m.textContent = "✅ 已把 " + n + " 条全部加入表格，请检查日期 / 时间后导出";
+}
+function rssAddSelected() {
+  const m = document.getElementById("rssTableMsg");
+  const box = document.getElementById("rssPreview");
+  if (!box) return;
+  const idxs = Array.prototype.slice.call(box.querySelectorAll('input[type="checkbox"][data-rss-idx]'))
+    .filter(function (c) { return c.checked; })
+    .map(function (c) { return parseInt(c.getAttribute("data-rss-idx"), 10); })
+    .filter(function (n) { return !isNaN(n); });
+  if (!idxs.length) { if (m) m.textContent = "❌ 请先勾选要加入的条目"; return; }
+  const n = rssAddItems(idxs.map(function (i) { return rssParsed[i]; }).filter(Boolean));
+  if (m) m.textContent = "✅ 已加入 " + n + " 条到表格";
+}
+
+/* ---------- ICS 导出 ---------- */
+function rssHash36(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+/* 把 "YYYY-MM-DD" / "YYYY年M月D日" 等文本按**本地日期**解析：
+   new Date("2026-10-01") 会按 UTC 午夜解析，再用本地 getDate() 读会在 UTC 以西差一天。
+   其它格式（如 Excel 序列号）仍回退 excelParseDate。 */
+function rssParseLocalDate(raw) {
+  const s = String(raw || "").trim();
+  const m = s.match(/^(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})日?/);
+  if (m) {
+    const d = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+    if (!isNaN(d.getTime())) return d;
+  }
+  return excelParseDate(raw);
+}
+function rssYmd(d) { return "" + d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()); }
+function rssGenerate() {
+  const tb = document.getElementById("rssTbody");
+  const msg = document.getElementById("rssTableMsg");
+  if (!tb) return;
+  const tzEl = document.getElementById("rssTimezone");
+  const timezone = ((tzEl && tzEl.value) || "Asia/Shanghai").trim() || "Asia/Shanghai";
+  const durEl = document.getElementById("rssDuration");
+  const dur = (durEl && durEl.value) || "60";
+  const uidEl = document.getElementById("rssUidPrefix");
+  const uidPrefix = ((uidEl && uidEl.value) || "rss2ics").trim().replace(/^@/, "") || "rss2ics";
+  const allDay = dur === "allday";
+  const durMin = allDay ? 0 : (parseInt(dur, 10) || 60);
+
+  const CRLF = String.fromCharCode(13, 10);
+  const dtstamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
+  const events = [];
+  const seen = {};
+  let skipped = 0, noDate = 0, noTime = 0;
+
+  Array.prototype.forEach.call(tb.children, function (tr) {
+    const tds = rssCells(tr);
+    const title = (tds[0] ? tds[0].textContent : "").trim();
+    const dateRaw = (tds[1] ? tds[1].textContent : "").trim();
+    const timeRaw = (tds[2] ? tds[2].textContent : "").trim();
+    const loc = (tds[3] ? tds[3].textContent : "").trim();
+    const desc = (tds[4] ? tds[4].textContent : "").trim();
+    const link = (tds[5] ? tds[5].textContent : "").trim();
+    const remRaw = (tds[6] ? tds[6].textContent : "").trim();
+    if (!title && !dateRaw && !timeRaw) return;
+    if (!title) { skipped++; return; }
+
+    const dObj = rssParseLocalDate(dateRaw);
+    if (!dObj) { skipped++; noDate++; return; }
+    const y = dObj.getFullYear();
+    const mo = String(dObj.getMonth() + 1).padStart(2, "0");
+    const da = String(dObj.getDate()).padStart(2, "0");
+
+    let uid = "rss" + rssHash36(link + "|" + dateRaw + "|" + title);
+    if (seen[uid]) { seen[uid]++; uid = uid + "-" + seen[uid]; } else { seen[uid] = 1; }
+    const reminder = Math.max(0, parseInt(remRaw, 10) || 0);
+
+    let ev = "BEGIN:VEVENT" + CRLF;
+    ev += "UID:" + uid + "@" + uidPrefix + CRLF;
+    ev += "DTSTAMP:" + dtstamp + CRLF;
+
+    if (allDay) {
+      const next = new Date(dObj.getTime() + 86400000);
+      ev += "DTSTART;VALUE=DATE:" + y + mo + da + CRLF;
+      ev += "DTEND;VALUE=DATE:" + rssYmd(next) + CRLF;
+    } else {
+      const tObj = timeRaw ? excelParseTime(timeRaw) : null;
+      if (!tObj) { skipped++; noTime++; return; }
+      const start = new Date(y, dObj.getMonth(), dObj.getDate(), parseInt(tObj.hh, 10), parseInt(tObj.mm, 10), 0);
+      const end = new Date(start.getTime() + durMin * 60000);
+      ev += "DTSTART;TZID=" + timezone + ":" + y + mo + da + "T" + tObj.hh + tObj.mm + "00" + CRLF;
+      ev += "DTEND;TZID=" + timezone + ":" + rssYmd(end) + "T" + pad2(end.getHours()) + pad2(end.getMinutes()) + "00" + CRLF;
+    }
+
+    ev += "SUMMARY:" + escapeForICS(title) + CRLF;
+    if (desc) ev += "DESCRIPTION:" + escapeForICS(desc) + CRLF;
+    if (loc) ev += "LOCATION:" + escapeForICS(loc) + CRLF;
+    if (link) ev += "URL:" + link + CRLF;
+    if (reminder > 0) {
+      ev += "BEGIN:VALARM" + CRLF + "TRIGGER:-PT" + reminder + "M" + CRLF +
+        "ACTION:DISPLAY" + CRLF + "DESCRIPTION:" + escapeForICS(title) + CRLF + "END:VALARM" + CRLF;
+    }
+    ev += "END:VEVENT";
+    events.push(ev);
+  });
+
+  if (!events.length) {
+    if (msg) msg.textContent = "❌ 没有可生成的行（需要标题 + 日期" + (allDay ? "" : " + 时间") + "）" + (skipped ? "；已跳过 " + skipped + " 行" : "");
+    return;
+  }
+  const ics = "BEGIN:VCALENDAR" + CRLF + "VERSION:2.0" + CRLF + "PRODID:-//RSS2ICS//CN" + CRLF +
+    "CALSCALE:GREGORIAN" + CRLF + "METHOD:PUBLISH" + CRLF +
+    "X-WR-CALNAME:" + escapeForICS("RSS 订阅日程") + CRLF + "X-WR-TIMEZONE:" + timezone + CRLF +
+    events.join(CRLF) + CRLF + "END:VCALENDAR";
+  downloadIcs(ics, "RSS日程_" + new Date().toISOString().slice(0, 10) + ".ics");
+
+  const extra = [];
+  if (noDate) extra.push(noDate + " 行日期无法解析");
+  if (noTime) extra.push(noTime + " 行缺少时间");
+  if (msg) msg.textContent = "✅ 已生成 " + events.length + " 条事件" + (extra.length ? "；跳过 " + extra.join("、") : "");
+}
+
+/* ---------- 初始化 ---------- */
+function rssInit() {
+  rssPresetInit();
+  rssInitRows();
+}
+
+
 document.addEventListener('DOMContentLoaded', () => {
   initKnowHistDate();
   renderSubs();
@@ -2450,6 +2978,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderNavList();
   navBind();
   pasteInit();
+  rssInit();
 });
 
 </script>
